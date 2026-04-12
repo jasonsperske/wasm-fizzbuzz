@@ -22,3 +22,5 @@ doom/clang_compiler_rt/build/
 
 # linuxdoom build artifacts
 doom/linuxdoom-1.10/linux/
+
+public/
