@@ -212,13 +212,18 @@
     function updateTitle() {
       document.title = (dHovered ? 'R' : 'D') + 'oo' + (mHovered ? 'R' : 'M');
     }
+    function handleBackroomsDoor(episode, level, door) {
+      return () => {
+        window.location.href = `https://backrooms.zone/door?source=${encodeURIComponent('https://jasonsperske.github.io/doom/')}&door=${encodeURIComponent(door)}`;
+      }
+    }
 
     if (window.location.pathname.match(/^\/doom\/E\dM\d(?:\/(\w+).html)?/)) {
       const pathParts = window.location.pathname.split('/').filter(Boolean);
       const episode = pathParts[1].match(/^E(\d)/)[1];
       const level = pathParts[1].match(/M(\d)/)[1];
       const door = pathParts[2] ? pathParts[2].match(/(.*).html/)[1] : '';
-      console.log('Parsed URL path:', { episode, level, door });
+
       fetch(`/doom/E${episode}M${level}.json`)
         .then(res => res.json())
         .then(room => {
@@ -226,23 +231,19 @@
             window._doomLaunch(['-warp', room.episode, room.level]);
           };
           document.addEventListener('levelLoaded', (e) => {
-            if(door in room.doors) {
+            if (door in room.doors) {
               setState(room.doors[door])
             }
             const listeners =
               room.listeners.map(listener => {
-                let handler = () => { };
-                if (listener.type === 'cross') {
-                  handler = info => {
-                    window.location.href = `https://backrooms.zone/door?source=${encodeURIComponent('https://jasonsperske.github.io/doom/')}&door=${encodeURIComponent(listener.door)}`;
-                  };
-                  onLinedefCrossed(listener.linedef, handler);
-
-                } else if (listener.type === 'use') {
-                  handler = info => {
-                    window.location.href = `https://backrooms.zone/door?source=${encodeURIComponent('https://jasonsperske.github.io/doom/')}&door=${encodeURIComponent(listener.door)}`;
-                  };
-                  onLinedefUsed(listener.linedef, handler);
+                let handler = handleBackroomsDoor(episode, level, listener.door);
+                switch (listener.type) {
+                  case 'cross':
+                    onLinedefCrossed(listener.linedef, handler);
+                    break;
+                  case 'use':
+                    onLinedefUsed(listener.linedef, handler);
+                    break;
                 }
                 return handler
               })
