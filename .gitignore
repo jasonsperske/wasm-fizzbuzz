@@ -1,0 +1,24 @@
+# Rust build output
+target/
+rust/target/
+
+# WebAssembly build outputs
+*.wasm
+wat/fizzbuzz.wasm
+rust/fizzbuzz.wasm
+doom/doom.wasm
+
+# C/C++ object files and static libraries
+*.o
+*.a
+
+# musl build artifacts
+doom/musl-1.2.2/obj/
+doom/musl-1.2.2/lib/
+doom/musl-1.2.2/built_inc/
+
+# compiler_rt build artifacts
+doom/clang_compiler_rt/build/
+
+# linuxdoom build artifacts
+doom/linuxdoom-1.10/linux/

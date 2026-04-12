@@ -5,7 +5,7 @@
 # $Log:$
 #
 CC=clang
-AR=llvm-ar-10
+AR=llvm-ar-20
 
 # If your get `error: unable to execute command: Executable "wasm-ld" doesn't exist!` on Ubntu 20.04
 # apt install lld
