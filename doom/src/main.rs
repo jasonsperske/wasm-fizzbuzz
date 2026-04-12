@@ -13,21 +13,7 @@ extern "C" {
     // m_argv.c
     static mut myargc: c_int;
     static mut myargv: *const *const u8; //c_char;
-
-    // js_exports.c — live game state accessors
-    fn doom_get_player_x() -> c_int;
-    fn doom_get_player_y() -> c_int;
-    fn doom_get_player_angle() -> u32;
-    fn doom_get_gameepisode() -> c_int;
-    fn doom_get_gamemap() -> c_int;
 }
-
-// Re-export game state accessors so JS can call them directly on the WASM instance.
-#[no_mangle] pub extern "C" fn get_player_x()     -> c_int { unsafe { doom_get_player_x() } }
-#[no_mangle] pub extern "C" fn get_player_y()     -> c_int { unsafe { doom_get_player_y() } }
-#[no_mangle] pub extern "C" fn get_player_angle() -> u32   { unsafe { doom_get_player_angle() } }
-#[no_mangle] pub extern "C" fn get_gameepisode()  -> c_int { unsafe { doom_get_gameepisode() } }
-#[no_mangle] pub extern "C" fn get_gamemap()      -> c_int { unsafe { doom_get_gamemap() } }
 
 // Macros to print to JavaScript Console.
 use doom::{log, println};

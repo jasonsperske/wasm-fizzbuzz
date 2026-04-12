@@ -203,18 +203,129 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
           angleDeg is 0–360 clockwise from east, matching DOOM's convention.
           episode and map are 1-based (e.g. episode 1, map 9).*/
         window.saveState = function () {
-            const x = obj.instance.exports.get_player_x();
-            const y = obj.instance.exports.get_player_y();
-            const angle = obj.instance.exports.get_player_angle();
-            const ep = obj.instance.exports.get_gameepisode();
-            const map = obj.instance.exports.get_gamemap();
+            const ex = obj.instance.exports;
+
+            const WEAPON_NAMES = [
+                'fist', 'pistol', 'shotgun', 'chaingun',
+                'rocketLauncher', 'plasmaRifle', 'bfg', 'chainsaw', 'superShotgun',
+            ];
+            const KEY_NAMES = [
+                'blueCard', 'yellowCard', 'redCard',
+                'blueSkull', 'yellowSkull', 'redSkull',
+            ];
+            const AMMO_NAMES = ['bullets', 'shells', 'cells', 'rockets'];
+
+            const weapons = {};
+            WEAPON_NAMES.forEach((name, i) => { weapons[name] = ex.get_weapon(i) === 1; });
+
+            const keys = {};
+            KEY_NAMES.forEach((name, i) => { keys[name] = ex.get_card(i) === 1; });
+
+            const ammo = {};
+            AMMO_NAMES.forEach((name, i) => { ammo[name] = ex.get_ammo(i); });
+
+            const rawAngle = ex.get_player_angle();
+
             return {
-                x: x / 65536,           // fixed_t → map units
-                y: y / 65536,
-                angleDeg: (angle / 0x100000000) * 360,
-                episode: ep,
-                map: map,
+                // Position / orientation
+                x:          ex.get_player_x() / 65536,
+                y:          ex.get_player_y() / 65536,
+                angleDeg:   (rawAngle / 0x100000000) * 360,
+                // Level
+                episode:    ex.get_gameepisode(),
+                map:        ex.get_gamemap(),
+                // Health / armour
+                health:     ex.get_health(),
+                armorPoints: ex.get_armor_points(),
+                armorType:  ex.get_armor_type(),
+                // Active weapon
+                readyWeapon: WEAPON_NAMES[ex.get_ready_weapon()] ?? ex.get_ready_weapon(),
+                // Inventory
+                backpack:   ex.get_backpack() === 1,
+                ...keys,
+                ...weapons,
+                ...ammo,
             };
+        };
+
+        /*Apply a partial or full state snapshot produced by saveState(), plus optional
+          inventory fields. Only properties that are present are applied; omitted ones
+          are left unchanged.
+
+          Position / orientation:
+            x, y        – map units (same scale as saveState output)
+            angleDeg    – 0–360
+
+          Health / armour:
+            health      – number
+            armorPoints – number
+            armorType   – 0 (none) | 1 (green) | 2 (blue/mega)
+
+          Keys (booleans):
+            blueCard, yellowCard, redCard,
+            blueSkull, yellowSkull, redSkull
+
+          Weapons (booleans):
+            fist, pistol, shotgun, chaingun, rocketLauncher,
+            plasmaRifle, bfg, chainsaw, superShotgun
+
+          Active weapon (must already be owned):
+            readyWeapon – one of the weapon name strings above, or its index 0–8
+
+          Ammo (numbers):
+            bullets, shells, cells, rockets
+
+          Backpack:
+            backpack    – boolean
+        */
+        window.setState = function (state) {
+            const ex = obj.instance.exports;
+
+            if (state.x !== undefined || state.y !== undefined) {
+                const cur = saveState();
+                const fx = Math.round((state.x ?? cur.x) * 65536);
+                const fy = Math.round((state.y ?? cur.y) * 65536);
+                ex.set_player_position(fx, fy);
+            }
+            if (state.angleDeg !== undefined) {
+                // Convert degrees to angle_t (full circle = 2^32); >>> 0 keeps it uint32.
+                const angle = ((state.angleDeg / 360) * 0x100000000) >>> 0;
+                ex.set_player_angle(angle);
+            }
+
+            if (state.health      !== undefined) ex.set_health(state.health);
+            if (state.armorPoints !== undefined) ex.set_armor_points(state.armorPoints);
+            if (state.armorType   !== undefined) ex.set_armor_type(state.armorType);
+
+            const KEY_MAP = {
+                blueCard: 0, yellowCard: 1, redCard: 2,
+                blueSkull: 3, yellowSkull: 4, redSkull: 5,
+            };
+            for (const [name, idx] of Object.entries(KEY_MAP)) {
+                if (state[name] !== undefined) ex.set_card(idx, state[name] ? 1 : 0);
+            }
+
+            const WEAPON_MAP = {
+                fist: 0, pistol: 1, shotgun: 2, chaingun: 3,
+                rocketLauncher: 4, plasmaRifle: 5, bfg: 6,
+                chainsaw: 7, superShotgun: 8,
+            };
+            for (const [name, idx] of Object.entries(WEAPON_MAP)) {
+                if (state[name] !== undefined) ex.set_weapon(idx, state[name] ? 1 : 0);
+            }
+            if (state.readyWeapon !== undefined) {
+                const idx = typeof state.readyWeapon === 'string'
+                    ? WEAPON_MAP[state.readyWeapon]
+                    : state.readyWeapon;
+                if (idx !== undefined) ex.set_ready_weapon(idx);
+            }
+
+            const AMMO_MAP = { bullets: 0, shells: 1, cells: 2, rockets: 3 };
+            for (const [name, idx] of Object.entries(AMMO_MAP)) {
+                if (state[name] !== undefined) ex.set_ammo(idx, state[name]);
+            }
+
+            if (state.backpack !== undefined) ex.set_backpack(state.backpack ? 1 : 0);
         };
 
         /*Subscribe to the levelLoaded event. If a level has already loaded by the
