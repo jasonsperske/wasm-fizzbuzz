@@ -47,6 +47,7 @@ extern "C" {
     fn doom_laser_top_texture() -> *const u8;
     fn doom_laser_mid_texture() -> *const u8;
     fn doom_laser_bot_texture() -> *const u8;
+    fn doom_laser_side() -> c_int;
     fn doom_get_linedef_textures(linedef_idx: c_int, side: c_int);
 
     // ── Linedef crossing watcher ─────────────────────────────────────────
@@ -102,10 +103,11 @@ extern "C" {
 
 // ── Laser pointer ─────────────────────────────────────────────────────────
 
-#[no_mangle] pub extern "C" fn laser_pointer()                              -> c_int    { unsafe { doom_laser_pointer() } }
-#[no_mangle] pub extern "C" fn laser_top_texture()                          -> *const u8 { unsafe { doom_laser_top_texture() } }
-#[no_mangle] pub extern "C" fn laser_mid_texture()                          -> *const u8 { unsafe { doom_laser_mid_texture() } }
-#[no_mangle] pub extern "C" fn laser_bot_texture()                          -> *const u8 { unsafe { doom_laser_bot_texture() } }
+#[no_mangle] pub extern "C" fn laser_pointer()                               -> c_int     { unsafe { doom_laser_pointer() } }
+#[no_mangle] pub extern "C" fn laser_top_texture()                           -> *const u8 { unsafe { doom_laser_top_texture() } }
+#[no_mangle] pub extern "C" fn laser_mid_texture()                           -> *const u8 { unsafe { doom_laser_mid_texture() } }
+#[no_mangle] pub extern "C" fn laser_bot_texture()                           -> *const u8 { unsafe { doom_laser_bot_texture() } }
+#[no_mangle] pub extern "C" fn laser_side()                                  -> c_int     { unsafe { doom_laser_side() } }
 #[no_mangle] pub extern "C" fn get_linedef_textures(idx: c_int, side: c_int) { unsafe { doom_get_linedef_textures(idx, side) } }
 
 // ── Linedef crossing watcher ──────────────────────────────────────────────

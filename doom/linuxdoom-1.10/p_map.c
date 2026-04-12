@@ -1092,30 +1092,36 @@ P_LineAttack
 //
 mobj_t*		usething;
 
+// JS import: fires whenever the player's use trace hits a line.
+extern void js_linedef_used (int linedef_idx, int side);
+
 boolean	PTR_UseTraverse (intercept_t* in)
 {
     int		side;
-	
+
     if (!in->d.line->special)
     {
 	P_LineOpening (in->d.line);
 	if (openrange <= 0)
 	{
+	    int ls = P_PointOnLineSide (usething->x, usething->y, in->d.line);
+	    js_linedef_used ((int)(in->d.line - lines), ls);
 	    S_StartSound (usething, sfx_noway);
-	    
+
 	    // can't use through a wall
-	    return false;	
+	    return false;
 	}
 	// not a special line, but keep checking
-	return true ;		
+	return true ;
     }
-	
+
     side = 0;
     if (P_PointOnLineSide (usething->x, usething->y, in->d.line) == 1)
 	side = 1;
-    
+
     //	return false;		// don't use back side
-	
+
+    js_linedef_used ((int)(in->d.line - lines), side);
     P_UseSpecialLine (usething, in->d.line, side);
 
     // can't use for than one special line in a row

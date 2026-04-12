@@ -1,0 +1,25 @@
+{
+    "episode": 1,
+    "leve": 1,
+    "listeners": [
+        {
+            "linedef": 0,
+            "type": "use",
+            "door_id": "E1M1-normal"
+        },
+        {
+            "linedef": 464,
+            "type": "cross",
+            "side": 0,
+            "door_id": "E1M1-secret"
+        }
+    ],
+    "doors": {
+        "E1M1-normal": {},
+        "E1M1-secret": {
+            "x": 3380.2933197021484,
+            "y": -3034.112518310547,
+            "angleDeg": 61.171875
+        }
+    }
+}

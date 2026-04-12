@@ -1,9 +1,6 @@
 'use strict';
 var memory = new WebAssembly.Memory({ initial: 108 });
 
-/*stdout and stderr goes here*/
-const output = document.getElementById("output");
-
 function readWasmString(offset, length) {
     const bytes = new Uint8Array(memory.buffer, offset, length);
     return new TextDecoder('utf8').decode(bytes);
@@ -29,7 +26,8 @@ function appendOutput(style) {
             if (lines[i].length == 0) {
                 continue;
             }
-            console.log(lines[i]);
+            // uncomment to see engine output
+            // console.log(lines[i]);
         }
     }
 }
@@ -65,13 +63,27 @@ var importObject = {
             window._lastLevelLoaded = { episode, map };
             document.dispatchEvent(new CustomEvent('levelLoaded', { detail: { episode, map } }));
         },
+        js_linedef_used: (linedefIdx, side) => {
+            const listeners = useListeners.get(linedefIdx);
+            if (!listeners || listeners.size === 0) return;
+            _doomExports.get_linedef_textures(linedefIdx, side);
+            const info = {
+                linedef: linedefIdx,
+                side,
+                topTexture: readCString(_doomExports.laser_top_texture()),
+                midTexture: readCString(_doomExports.laser_mid_texture()),
+                botTexture: readCString(_doomExports.laser_bot_texture()),
+            };
+            listeners.forEach(cb => cb(info));
+        },
         js_linedef_crossed: (linedefIdx, fromSide) => {
+
             const listeners = linedefListeners.get(linedefIdx);
             if (!listeners || listeners.size === 0) return;
             // Populate the shared texture buffers for this linedef/side.
             _doomExports.get_linedef_textures(linedefIdx, fromSide);
             const info = {
-                linedef:    linedefIdx,
+                linedef: linedefIdx,
                 fromSide,
                 topTexture: readCString(_doomExports.laser_top_texture()),
                 midTexture: readCString(_doomExports.laser_mid_texture()),
@@ -114,22 +126,19 @@ function setupArgv(args) {
 }
 
 // Shared state needed by importObject.env handlers before obj is available.
-const linedefListeners = new Map(); // linedefIdx → Set<callback>
+const linedefListeners = new Map(); // linedefIdx → Set<callback>  (crossing)
+const useListeners = new Map(); // linedefIdx → Set<callback>  (use/activate)
 let _doomExports = null;            // set once WASM is instantiated
 
-console.log('[doom] fetching doom.wasm...');
-WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
+WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
     .then(obj => {
         _doomExports = obj.instance.exports;
-        console.log('[doom] wasm loaded. exports:', Object.keys(obj.instance.exports));
 
         /*Launch DOOM with the given extra arguments (e.g. ["-warp", "1", "9"]).
           argv[0] is always "doom". Call this once on startup.*/
         window._doomLaunch = function (extraArgs) {
             const args = ["doom", ...extraArgs];
-            console.log('[doom] _doomLaunch called with argv:', args);
             const { argc, argvPtr } = setupArgv(args);
-            console.log('[doom] argv written to wasm memory — argc:', argc, 'argvPtr:', argvPtr);
 
             if (typeof obj.instance.exports.doom_start !== 'function') {
                 console.error('[doom] doom_start not found in exports! Available:', Object.keys(obj.instance.exports));
@@ -137,10 +146,7 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
             }
 
             /*Initialize Doom*/
-            console.log('[doom] calling doom_start...');
             obj.instance.exports.doom_start(argc, argvPtr);
-            console.log('[doom] doom_start returned');
-
 
             /*input handling*/
             let doomKeyCode = function (keyCode) {
@@ -256,20 +262,20 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
 
             return {
                 // Position / orientation
-                x:          ex.get_player_x() / 65536,
-                y:          ex.get_player_y() / 65536,
-                angleDeg:   (rawAngle / 0x100000000) * 360,
+                x: ex.get_player_x() / 65536,
+                y: ex.get_player_y() / 65536,
+                angleDeg: (rawAngle / 0x100000000) * 360,
                 // Level
-                episode:    ex.get_gameepisode(),
-                map:        ex.get_gamemap(),
+                episode: ex.get_gameepisode(),
+                map: ex.get_gamemap(),
                 // Health / armour
-                health:     ex.get_health(),
+                health: ex.get_health(),
                 armorPoints: ex.get_armor_points(),
-                armorType:  ex.get_armor_type(),
+                armorType: ex.get_armor_type(),
                 // Active weapon
                 readyWeapon: WEAPON_NAMES[ex.get_ready_weapon()] ?? ex.get_ready_weapon(),
                 // Inventory
-                backpack:   ex.get_backpack() === 1,
+                backpack: ex.get_backpack() === 1,
                 ...keys,
                 ...weapons,
                 ...ammo,
@@ -321,9 +327,9 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
                 ex.set_player_angle(angle);
             }
 
-            if (state.health      !== undefined) ex.set_health(state.health);
+            if (state.health !== undefined) ex.set_health(state.health);
             if (state.armorPoints !== undefined) ex.set_armor_points(state.armorPoints);
-            if (state.armorType   !== undefined) ex.set_armor_type(state.armorType);
+            if (state.armorType !== undefined) ex.set_armor_type(state.armorType);
 
             const KEY_MAP = {
                 blueCard: 0, yellowCard: 1, redCard: 2,
@@ -373,6 +379,7 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
             if (linedef < 0) return null;
             return {
                 linedef,
+                side: ex.laser_side(),
                 topTexture: readCString(ex.laser_top_texture()),
                 midTexture: readCString(ex.laser_mid_texture()),
                 botTexture: readCString(ex.laser_bot_texture()),
@@ -389,7 +396,7 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
               botTexture:  string,
             }
           Returns the callback so it can be passed to offLinedefCrossed later.*/
-        window.onLinedefCrossed = function(linedefIdx, callback) {
+        window.onLinedefCrossed = function (linedefIdx, callback) {
             if (!linedefListeners.has(linedefIdx)) {
                 linedefListeners.set(linedefIdx, new Set());
                 _doomExports.watch_linedef(linedefIdx);
@@ -400,7 +407,7 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
 
         /*Remove a callback registered with onLinedefCrossed.
           If no callbacks remain for the linedef, the C watcher is also removed.*/
-        window.offLinedefCrossed = function(linedefIdx, callback) {
+        window.offLinedefCrossed = function (linedefIdx, callback) {
             const listeners = linedefListeners.get(linedefIdx);
             if (!listeners) return;
             listeners.delete(callback);
@@ -410,12 +417,43 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
             }
         };
 
+        /*Subscribe to linedef use events — fires when the player presses the
+          use key (spacebar) while facing a specific linedef, whether or not
+          that linedef is a special (door/switch/etc.).
+
+          Callback receives:
+            {
+              linedef:    number,   // index into DOOM's lines[] array
+              side:       number,   // 0 = front face, 1 = back face
+              topTexture: string,
+              midTexture: string,
+              botTexture: string,
+            }
+          Returns the callback so it can be passed to offLinedefUsed.*/
+        window.onLinedefUsed = function (linedefIdx, callback) {
+            if (!useListeners.has(linedefIdx)) {
+                useListeners.set(linedefIdx, new Set());
+            }
+            useListeners.get(linedefIdx).add(callback);
+            return callback;
+        };
+
+        /*Remove a callback registered with onLinedefUsed.*/
+        window.offLinedefUsed = function (linedefIdx, callback) {
+            const listeners = useListeners.get(linedefIdx);
+            if (!listeners) return;
+            listeners.delete(callback);
+            if (listeners.size === 0) {
+                useListeners.delete(linedefIdx);
+            }
+        };
+
         /*Subscribe to the levelLoaded event. If a level has already loaded by the
           time this is called (e.g. from the console or a deferred script), the
           callback is invoked immediately with the stored detail. Otherwise it fires
           on the next levelLoaded event. Use { once: false } to receive every level
           transition rather than just the next one.*/
-        window.onLevelLoaded = function(callback, { once = true } = {}) {
+        window.onLevelLoaded = function (callback, { once = true } = {}) {
             if (window._lastLevelLoaded !== undefined) {
                 callback(new CustomEvent('levelLoaded', { detail: window._lastLevelLoaded }));
                 if (!once) {

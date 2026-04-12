@@ -4,224 +4,266 @@
 
 <html>
 
-  <head>
-    <meta charset="utf-8">
-    <title>DooM</title>
+<head>
+  <meta charset="utf-8">
+  <title>DooM</title>
 
-    <style>
-      *, *::before, *::after {
-        box-sizing: border-box;
-      }
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
 
-      html, body {
-        margin: 0;
-        padding: 0;
-        background-color: #000000;
-        color: #AAAAAA;
-        font-family: "Courier New", Courier, monospace;
-        font-size: 14px;
-      }
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #000000;
+      color: #AAAAAA;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 14px;
+    }
 
-      /* Canvas fills the viewport, preserving native 640×400 (8:5) aspect ratio */
-      #screen {
-        display: block;
-        width: min(100vw, 160vh); /* 160vh = 100vh * (640/400) */
-        height: auto;
-        aspect-ratio: 640 / 400;
-        margin: 0 auto;
-        background: #000;
-        image-rendering: pixelated;
-        image-rendering: crisp-edges;
-      }
+    /* Canvas fills the viewport, preserving native 640×400 (8:5) aspect ratio */
+    #screen {
+      display: block;
+      width: min(100vw, 160vh);
+      /* 160vh = 100vh * (640/400) */
+      height: auto;
+      aspect-ratio: 640 / 400;
+      margin: 0 auto;
+      background: #000;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
 
-      /* ── Below-the-fold DOS panel ─────────────────────────── */
-      .dos-panel {
-        max-width: 720px;
-        margin: 0 auto;
-        padding: 20px 16px 32px;
-      }
+    /* ── Below-the-fold DOS panel ─────────────────────────── */
+    .dos-panel {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 20px 16px 32px;
+    }
 
-      .dos-title-bar {
-        background-color: #0000AA;
-        color: #FFFFFF;
-        text-align: center;
-        padding: 3px 8px;
-        font-weight: bold;
-        font-size: 15px;
-        letter-spacing: 3px;
-        border: 2px solid #AAAAAA;
-        margin-bottom: 18px;
-      }
+    .dos-title-bar {
+      background-color: #0000AA;
+      color: #FFFFFF;
+      text-align: center;
+      padding: 3px 8px;
+      font-weight: bold;
+      font-size: 15px;
+      letter-spacing: 3px;
+      border: 2px solid #AAAAAA;
+      margin-bottom: 18px;
+    }
 
-      /* Letter-swap hover effect (D→R, M→R easter egg) */
-      .swap {
-        display: inline-block;
-        position: relative;
-        cursor: default;
-      }
-      .swap .rep {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        text-align: center;
-        opacity: 0;
-        pointer-events: none;
-      }
-      .swap:hover .orig { opacity: 0; }
-      .swap:hover .rep  { opacity: 1; }
+    /* Letter-swap hover effect (D→R, M→R easter egg) */
+    .swap {
+      display: inline-block;
+      position: relative;
+      cursor: default;
+    }
 
-      .dos-box {
-        border: 1px solid #555555;
-        outline: 1px solid #222222;
-        padding: 10px 14px;
-        margin: 14px 0;
-      }
+    .swap .rep {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+    }
 
-      .dos-section-label {
-        color: #55FF55;
-        font-weight: bold;
-        margin: 0 0 6px;
-      }
+    .swap:hover .orig {
+      opacity: 0;
+    }
 
-      p {
-        margin: 8px 0;
-        line-height: 1.7;
-      }
+    .swap:hover .rep {
+      opacity: 1;
+    }
 
-      a {
-        color: #55FFFF;
-        text-decoration: none;
-      }
+    .dos-box {
+      border: 1px solid #555555;
+      outline: 1px solid #222222;
+      padding: 10px 14px;
+      margin: 14px 0;
+    }
 
-      a:hover {
-        color: #FFFFFF;
-        text-decoration: underline;
-      }
+    .dos-section-label {
+      color: #55FF55;
+      font-weight: bold;
+      margin: 0 0 6px;
+    }
 
-      #focushint {
-        color: #FFFF55;
-        font-weight: bold;
-        min-height: 1.4em;
-      }
+    p {
+      margin: 8px 0;
+      line-height: 1.7;
+    }
 
-      button {
-        background-color: #AAAAAA;
-        color: #000000;
-        border: 2px solid #FFFFFF;
-        border-bottom-color: #555555;
-        border-right-color: #555555;
-        font-family: "Courier New", Courier, monospace;
-        font-size: 12px;
-        padding: 1px 6px;
-        cursor: pointer;
-        min-width: 28px;
-        line-height: 1.4;
-      }
+    a {
+      color: #55FFFF;
+      text-decoration: none;
+    }
 
-      button:active {
-        border-color: #555555;
-        border-bottom-color: #FFFFFF;
-        border-right-color: #FFFFFF;
-      }
+    a:hover {
+      color: #FFFFFF;
+      text-decoration: underline;
+    }
 
-      .dos-hr {
-        border: none;
-        border-top: 1px solid #333333;
-        margin: 16px 0;
-      }
+    #focushint {
+      color: #FFFF55;
+      font-weight: bold;
+      min-height: 1.4em;
+    }
 
-      .dim {
-        color: #666666;
-      }
-    </style>
-  </head>
+    button {
+      background-color: #AAAAAA;
+      color: #000000;
+      border: 2px solid #FFFFFF;
+      border-bottom-color: #555555;
+      border-right-color: #555555;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 12px;
+      padding: 1px 6px;
+      cursor: pointer;
+      min-width: 28px;
+      line-height: 1.4;
+    }
 
-  <body>
+    button:active {
+      border-color: #555555;
+      border-bottom-color: #FFFFFF;
+      border-right-color: #FFFFFF;
+    }
 
-    <!-- ── Canvas: fills the visible viewport ──────────────── -->
-    <canvas id="screen" width="640" height="400" tabindex="0">
-      This is where the DooM screen should render.
-    </canvas>
+    .dos-hr {
+      border: none;
+      border-top: 1px solid #333333;
+      margin: 16px 0;
+    }
 
-    <!-- ── Scroll down for controls & info ─────────────────── -->
-    <div class="dos-panel">
+    .dim {
+      color: #666666;
+    }
+  </style>
+</head>
 
-      <div class="dos-title-bar">&#x2588; <span class="swap"><span class="orig">D</span><span class="rep" aria-hidden="true">R</span></span>oo<span class="swap"><span class="orig">M</span><span class="rep" aria-hidden="true">R</span></span>.EXE &mdash; WebAssembly Edition &#x2588;</div>
+<body>
 
-      <div class="dos-box">
-        <p class="dos-section-label">&#x25BA; STATUS</p>
-        <p id="focushint"></p>
-      </div>
+  <!-- ── Canvas: fills the visible viewport ──────────────── -->
+  <canvas id="screen" width="640" height="400" tabindex="0">
+    This is where the DooM screen should render.
+  </canvas>
 
-      <div class="dos-box">
-        <p class="dos-section-label">&#x25BA; CONTROLS</p>
-        <p>
-          <button id="enterButton">&#x23CE;</button> &nbsp;Start / confirm
-        </p>
-        <p>
-          <button id="leftButton">&#x2190;</button>
-          <button id="upButton">&#x2191;</button>
-          <button id="downButton">&#x2193;</button>
-          <button id="rightButton">&#x2192;</button>
-          &nbsp;Move
-        </p>
-        <p><button id="ctrlButton">CTRL</button> &nbsp;Shoot</p>
-        <p><button id="spaceButton">&nbsp;SPC&nbsp;</button> &nbsp;Open gates</p>
-        <p><button id="altButton">ALT</button> + arrows &nbsp;Strafe <span class="dim">(if your browser permits)</span></p>
-        <p class="dim">On mobile, tap the buttons above.</p>
-      </div>
+  <!-- ── Scroll down for controls & info ─────────────────── -->
+  <div class="dos-panel">
 
-      <hr class="dos-hr">
+    <div class="dos-title-bar">&#x2588; <span class="swap"><span class="orig">D</span><span class="rep"
+          aria-hidden="true">R</span></span>oo<span class="swap"><span class="orig">M</span><span class="rep"
+          aria-hidden="true">R</span></span>.EXE &mdash; WebAssembly Edition &#x2588;</div>
 
-      <p>
-        A wasm32 port of 1997 linux<span class="swap"><span class="orig">d</span><span class="rep" aria-hidden="true">r</span></span>oo<span class="swap"><span class="orig">m</span><span class="rep" aria-hidden="true">r</span></span>-1.10 with minimal modifications to the
-        <a href="https://github.com/id-Software/DOOM">sources</a>.
-      </p>
-      <p>
-        Find all the details in the README of the
-        <a href="https://github.com/diekmann/wasm-fizzbuzz">WebAssembly from Scratch Article</a>.
-      </p>
-      <p class="dim">C:\<span class="swap"><span class="orig">D</span><span class="rep" aria-hidden="true">R</span></span>OO<span class="swap"><span class="orig">M</span><span class="rep" aria-hidden="true">R</span></span>&gt; _</p>
-
+    <div class="dos-box">
+      <p class="dos-section-label">&#x25BA; STATUS</p>
+      <p id="focushint"></p>
     </div>
 
-    <script src="main.js" defer></script>
-    <script>
-      let dHovered = false;
-      let mHovered = false;
+    <div class="dos-box">
+      <p class="dos-section-label">&#x25BA; CONTROLS</p>
+      <p>
+        <button id="enterButton">&#x23CE;</button> &nbsp;Start / confirm
+      </p>
+      <p>
+        <button id="leftButton">&#x2190;</button>
+        <button id="upButton">&#x2191;</button>
+        <button id="downButton">&#x2193;</button>
+        <button id="rightButton">&#x2192;</button>
+        &nbsp;Move
+      </p>
+      <p><button id="ctrlButton">CTRL</button> &nbsp;Shoot</p>
+      <p><button id="spaceButton">&nbsp;SPC&nbsp;</button> &nbsp;Open gates</p>
+      <p><button id="altButton">ALT</button> + arrows &nbsp;Strafe <span class="dim">(if your browser permits)</span>
+      </p>
+      <p class="dim">On mobile, tap the buttons above.</p>
+    </div>
 
-      function updateTitle() {
-        document.title = (dHovered ? 'R' : 'D') + 'oo' + (mHovered ? 'R' : 'M');
-      }
+    <hr class="dos-hr">
 
-      window._doomReady = function() {
-        window._doomLaunch(['-warp', '1', '1']);
-      };
+    <p>
+      A wasm32 port of 1997 linux<span class="swap"><span class="orig">d</span><span class="rep"
+          aria-hidden="true">r</span></span>oo<span class="swap"><span class="orig">m</span><span class="rep"
+          aria-hidden="true">r</span></span>-1.10 with minimal modifications to the
+      <a href="https://github.com/id-Software/DOOM">sources</a>.
+    </p>
+    <p>
+      Find all the details in the README of the
+      <a href="https://github.com/diekmann/wasm-fizzbuzz">WebAssembly from Scratch Article</a>.
+    </p>
+    <p class="dim">C:\<span class="swap"><span class="orig">D</span><span class="rep"
+          aria-hidden="true">R</span></span>OO<span class="swap"><span class="orig">M</span><span class="rep"
+          aria-hidden="true">R</span></span>&gt; _</p>
 
-      // Inline scripts run before deferred main.js, so this listener is always
-      // registered before any level loads — whether via -warp on startup or
-      // after the player selects an episode and difficulty from the menu.
-      document.addEventListener('levelLoaded', (e) => {
-        console.log('Level ready:', e.detail);
-        console.log('Player state:', saveState());
-        onLinedefCrossed(49, info => {
-          console.log('[linedef 49] crossed from side', info.fromSide,
-            '— top:', info.topTexture, 'mid:', info.midTexture, 'bot:', info.botTexture);
+  </div>
+
+  <script src="/doom/main.js" defer></script>
+  <script>
+    let dHovered = false;
+    let mHovered = false;
+
+    function updateTitle() {
+      document.title = (dHovered ? 'R' : 'D') + 'oo' + (mHovered ? 'R' : 'M');
+    }
+
+    if (window.location.pathname.match(/^\/doom\/E\dM\d[\/]?/)) {
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const episode = pathParts[1].match(/^E\d/)[0];
+      const level = pathParts[1].match(/M\d/)[0];
+      fetch(`${episode}${level}.json`)
+        .then(res => res.json())
+        .then(room => {
+          window._doomReady = function () {
+            window._doomLaunch(['-warp', room.episode, room.leve]);
+          };
+          document.addEventListener('levelLoaded', (e) => {
+            const listeners =
+              room.listeners.map(listener => {
+                let handler = () => { };
+                if (listener.type === 'cross') {
+                  handler = info => {
+                    console.log(`[linedef ${listener.linedef}] crossed from side`, info.fromSide,
+                      '— top:', info.topTexture, 'mid:', info.midTexture, 'bot:', info.botTexture);
+                  };
+                  onLinedefCrossed(listener.linedef, handler);
+
+                } else if (listener.type === 'use') {
+                  handler = info => {
+                    console.log(`[linedef ${listener.linedef}] used from side`, info.side,
+                      '— top:', info.topTexture, 'mid:', info.midTexture, 'bot:', info.botTexture);
+                  };
+                  onLinedefUsed(listener.linedef, handler);
+                }
+                return handler
+              })
+          });
         });
-      });
+    } else {
+      window._doomReady = function () {
+        window._doomLaunch([]);
+      };
+    }
 
-      document.querySelectorAll('.swap').forEach(el => {
-        const letter = el.querySelector('.orig').textContent.toUpperCase();
-        if (letter === 'D') {
-          el.addEventListener('mouseenter', () => { dHovered = true;  updateTitle(); });
-          el.addEventListener('mouseleave', () => { dHovered = false; updateTitle(); });
-        } else if (letter === 'M') {
-          el.addEventListener('mouseenter', () => { mHovered = true;  updateTitle(); });
-          el.addEventListener('mouseleave', () => { mHovered = false; updateTitle(); });
-        }
-      });
-    </script>
-  </body>
+
+
+    document.querySelectorAll('.swap').forEach(el => {
+      const letter = el.querySelector('.orig').textContent.toUpperCase();
+      if (letter === 'D') {
+        el.addEventListener('mouseenter', () => { dHovered = true; updateTitle(); });
+        el.addEventListener('mouseleave', () => { dHovered = false; updateTitle(); });
+      } else if (letter === 'M') {
+        el.addEventListener('mouseenter', () => { mHovered = true; updateTitle(); });
+        el.addEventListener('mouseleave', () => { mHovered = false; updateTitle(); });
+      }
+    });
+  </script>
+</body>
 
 </html>

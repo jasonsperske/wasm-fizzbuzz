@@ -163,6 +163,7 @@ extern laser_tex_stub_t** textures;
 
 // Results written by the traversal callback and read by the getters below.
 static int          laser_linedef_index = -1;
+static int          laser_side = -1;
 static char         laser_top_tex[9];
 static char         laser_mid_tex[9];
 static char         laser_bot_tex[9];
@@ -205,12 +206,13 @@ int doom_laser_pointer(void) {
     laser_hit_line = NULL;
     P_PathTraverse(x, y, x2, y2, PT_ADDLINES, laser_trav);
 
-    if (laser_hit_line == NULL) { laser_linedef_index = -1; return -1; }
+    if (laser_hit_line == NULL) { laser_linedef_index = -1; laser_side = -1; return -1; }
 
     laser_linedef_index = (int)(laser_hit_line - lines);
 
     // Which side is facing the player?  0 = front, 1 = back.
     int side = P_PointOnLineSide(x, y, laser_hit_line);
+    laser_side = side;
 
     if (laser_hit_line->sidenum[side] == -1) {
         // One-sided line viewed from its back — no sidedef, no textures.
@@ -232,6 +234,7 @@ int doom_laser_pointer(void) {
 const char* doom_laser_top_texture(void) { return laser_top_tex; }
 const char* doom_laser_mid_texture(void) { return laser_mid_tex; }
 const char* doom_laser_bot_texture(void) { return laser_bot_tex; }
+int         doom_laser_side(void)        { return laser_side; }
 
 // Populate the shared texture name buffers for an arbitrary linedef/side.
 // side: 0 = front, 1 = back.  Call the laser_*_texture() getters afterward.
