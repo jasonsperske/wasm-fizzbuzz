@@ -192,6 +192,25 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
         window.requestAnimationFrame(step);
     };
 
+    /*Return a snapshot of the player's current position, facing angle, and level.
+      x/y are in DOOM map units (fixed_t >> 16).
+      angleDeg is 0–360 clockwise from east, matching DOOM's convention.
+      episode and map are 1-based (e.g. episode 1, map 9).*/
+    window.saveState = function() {
+        const x     = obj.instance.exports.get_player_x();
+        const y     = obj.instance.exports.get_player_y();
+        const angle = obj.instance.exports.get_player_angle();
+        const ep    = obj.instance.exports.get_gameepisode();
+        const map   = obj.instance.exports.get_gamemap();
+        return {
+            x:          x / 65536,           // fixed_t → map units
+            y:          y / 65536,
+            angleDeg:   (angle / 0x100000000) * 360,
+            episode:    ep,
+            map:        map,
+        };
+    };
+
     /*Signal to the page that WASM is loaded and _doomLaunch is ready*/
     console.log('[doom] wasm ready. window._doomReady is:', typeof window._doomReady);
     if (typeof window._doomReady === 'function') {
