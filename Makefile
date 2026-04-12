@@ -23,5 +23,8 @@ dev:
 	done
 
 clean:
+	$(MAKE) -C wat clean
+	$(MAKE) -C rust clean
+	$(MAKE) -C doom clean
 	rm -rf ./public
 
