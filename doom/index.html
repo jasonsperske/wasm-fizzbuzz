@@ -213,31 +213,34 @@
       document.title = (dHovered ? 'R' : 'D') + 'oo' + (mHovered ? 'R' : 'M');
     }
 
-    if (window.location.pathname.match(/^\/doom\/E\dM\d[\/]?/)) {
+    if (window.location.pathname.match(/^\/doom\/E\dM\d(?:\/(\w+).html)?/)) {
       const pathParts = window.location.pathname.split('/').filter(Boolean);
-      const episode = pathParts[1].match(/^E\d/)[0];
-      const level = pathParts[1].match(/M\d/)[0];
-      fetch(`${episode}${level}.json`)
+      const episode = pathParts[1].match(/^E(\d)/)[1];
+      const level = pathParts[1].match(/M(\d)/)[1];
+      const door = pathParts[2] ? pathParts[2].match(/(.*).html/)[1] : '';
+      console.log('Parsed URL path:', { episode, level, door });
+      fetch(`/doom/E${episode}M${level}.json`)
         .then(res => res.json())
         .then(room => {
           window._doomReady = function () {
-            window._doomLaunch(['-warp', room.episode, room.leve]);
+            window._doomLaunch(['-warp', room.episode, room.level]);
           };
           document.addEventListener('levelLoaded', (e) => {
+            if(door in room.doors) {
+              setState(room.doors[door])
+            }
             const listeners =
               room.listeners.map(listener => {
                 let handler = () => { };
                 if (listener.type === 'cross') {
                   handler = info => {
-                    console.log(`[linedef ${listener.linedef}] crossed from side`, info.fromSide,
-                      '— top:', info.topTexture, 'mid:', info.midTexture, 'bot:', info.botTexture);
+                    window.location.href = `https://backrooms.zone/door?source=${encodeURIComponent('https://jasonsperske.github.io/doom/')}&door=${encodeURIComponent(listener.door)}`;
                   };
                   onLinedefCrossed(listener.linedef, handler);
 
                 } else if (listener.type === 'use') {
                   handler = info => {
-                    console.log(`[linedef ${listener.linedef}] used from side`, info.side,
-                      '— top:', info.topTexture, 'mid:', info.midTexture, 'bot:', info.botTexture);
+                    window.location.href = `https://backrooms.zone/door?source=${encodeURIComponent('https://jasonsperske.github.io/doom/')}&door=${encodeURIComponent(listener.door)}`;
                   };
                   onLinedefUsed(listener.linedef, handler);
                 }

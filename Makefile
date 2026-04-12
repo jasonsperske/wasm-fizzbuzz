@@ -12,8 +12,10 @@ all:
 	cp -a ./doom/E1M1.json ./public/doom/
 	cp -a ./doom/doom.wasm ./public/doom/
 	mkdir -p ./public/doom/E1M1
-	cp -a ./doom/E1M1.json ./public/doom/E1M1/
+	cp -a ./doom/E1M1.json ./public/doom/
 	cp -a ./doom/index.html ./public/doom/E1M1/
+	cp -a ./doom/index.html ./public/doom/E1M1/E1M1-normal.html
+	cp -a ./doom/index.html ./public/doom/E1M1/E1M1-secret.html
 
 dev:
 	@command -v inotifywait >/dev/null 2>&1 || { echo "inotifywait not found. Install with: sudo apt install inotify-tools"; exit 1; }
