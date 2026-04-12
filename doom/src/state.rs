@@ -41,6 +41,12 @@ extern "C" {
 
     // ── Backpack ─────────────────────────────────────────────────────────
     fn doom_set_backpack(owned: c_int);
+
+    // ── Laser pointer ────────────────────────────────────────────────────
+    fn doom_laser_pointer() -> c_int;
+    fn doom_laser_top_texture() -> *const u8;
+    fn doom_laser_mid_texture() -> *const u8;
+    fn doom_laser_bot_texture() -> *const u8;
 }
 
 // ── Getters ───────────────────────────────────────────────────────────────
@@ -87,3 +93,10 @@ extern "C" {
 // ── Backpack ──────────────────────────────────────────────────────────────
 
 #[no_mangle] pub extern "C" fn set_backpack(owned: c_int) { unsafe { doom_set_backpack(owned) } }
+
+// ── Laser pointer ─────────────────────────────────────────────────────────
+
+#[no_mangle] pub extern "C" fn laser_pointer()        -> c_int    { unsafe { doom_laser_pointer() } }
+#[no_mangle] pub extern "C" fn laser_top_texture()    -> *const u8 { unsafe { doom_laser_top_texture() } }
+#[no_mangle] pub extern "C" fn laser_mid_texture()    -> *const u8 { unsafe { doom_laser_mid_texture() } }
+#[no_mangle] pub extern "C" fn laser_bot_texture()    -> *const u8 { unsafe { doom_laser_bot_texture() } }

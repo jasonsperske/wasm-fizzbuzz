@@ -1,8 +1,13 @@
 // Getter and setter functions exported to JavaScript via Rust/WASM.
 // Access and mutate live game state: player position, angle, inventory, and level.
 
+#include <string.h>
+
 #include "doomstat.h" // players[], consoleplayer, gameepisode, gamemap
-#include "p_local.h"  // P_TeleportMove, P_SetupPsprites
+#include "p_local.h"  // P_TeleportMove, P_SetupPsprites, P_PathTraverse, P_PointOnLineSide
+#include "r_state.h"  // lines, sides
+#include "tables.h"   // finecosine, finesine, ANGLETOFINESHIFT
+#include "m_fixed.h"  // FixedMul, FRACUNIT
 
 // fixed_t is 16.16 fixed-point (divide by 65536 in JS to get map units).
 // angle_t is a 32-bit value where 0xFFFFFFFF = 360 degrees.
@@ -145,3 +150,85 @@ void doom_set_ammo(int index, int amount) {
 void doom_set_backpack(int owned) {
     players[consoleplayer].backpack = owned ? true : false;
 }
+
+// ── Laser pointer ─────────────────────────────────────────────────────────
+//
+// Casts a ray from the player's position in the direction they are facing and
+// returns information about the first linedef wall it hits.
+//
+// texture_t is defined only in r_data.c, so we use a stub struct that covers
+// just the name field which is guaranteed to be at offset 0.
+typedef struct { char name[8]; } laser_tex_stub_t;
+extern laser_tex_stub_t** textures;
+
+// Results written by the traversal callback and read by the getters below.
+static int          laser_linedef_index = -1;
+static char         laser_top_tex[9];
+static char         laser_mid_tex[9];
+static char         laser_bot_tex[9];
+
+// Copy an 8-char (possibly non-null-terminated) WAD texture name into a
+// 9-char buffer, trimming trailing spaces.  Index 0 means "no texture".
+static void copy_tex_name(char *dst, int idx) {
+    if (idx <= 0) { dst[0] = '-'; dst[1] = '\0'; return; }
+    memcpy(dst, textures[idx]->name, 8);
+    dst[8] = '\0';
+    int i = 7;
+    while (i > 0 && (dst[i] == ' ' || dst[i] == '\0')) i--;
+    dst[i + 1] = '\0';
+}
+
+// P_PathTraverse callback: stops at the very first line encountered.
+static line_t* laser_hit_line;
+static boolean laser_trav(intercept_t* in) {
+    if (!in->isaline) return true;  // skip mobjs, keep going
+    laser_hit_line = in->d.line;
+    return false;                   // stop traversal
+}
+
+// Cast the ray and populate the static result buffers.
+// Returns the linedef index (into the global lines[] array), or -1 if nothing
+// was hit within range.
+int doom_laser_pointer(void) {
+    player_t* p = &players[consoleplayer];
+    if (p->mo == NULL) return -1;
+
+    fixed_t x = p->mo->x;
+    fixed_t y = p->mo->y;
+    int     an = p->mo->angle >> ANGLETOFINESHIFT;
+
+    // 2048 map-unit trace — comfortably covers any normal room.
+    fixed_t dist = 2048 * FRACUNIT;
+    fixed_t x2   = x + FixedMul(dist, finecosine[an]);
+    fixed_t y2   = y + FixedMul(dist, finesine[an]);
+
+    laser_hit_line = NULL;
+    P_PathTraverse(x, y, x2, y2, PT_ADDLINES, laser_trav);
+
+    if (laser_hit_line == NULL) { laser_linedef_index = -1; return -1; }
+
+    laser_linedef_index = (int)(laser_hit_line - lines);
+
+    // Which side is facing the player?  0 = front, 1 = back.
+    int side = P_PointOnLineSide(x, y, laser_hit_line);
+
+    if (laser_hit_line->sidenum[side] == -1) {
+        // One-sided line viewed from its back — no sidedef, no textures.
+        laser_top_tex[0] = '-'; laser_top_tex[1] = '\0';
+        laser_mid_tex[0] = '-'; laser_mid_tex[1] = '\0';
+        laser_bot_tex[0] = '-'; laser_bot_tex[1] = '\0';
+    } else {
+        side_t* sd = &sides[laser_hit_line->sidenum[side]];
+        copy_tex_name(laser_top_tex, sd->toptexture);
+        copy_tex_name(laser_mid_tex, sd->midtexture);
+        copy_tex_name(laser_bot_tex, sd->bottomtexture);
+    }
+
+    return laser_linedef_index;
+}
+
+// Texture name accessors — call these after doom_laser_pointer() returns >= 0.
+// Return pointers into static buffers (valid until next call to doom_laser_pointer).
+const char* doom_laser_top_texture(void) { return laser_top_tex; }
+const char* doom_laser_mid_texture(void) { return laser_mid_tex; }
+const char* doom_laser_bot_texture(void) { return laser_bot_tex; }

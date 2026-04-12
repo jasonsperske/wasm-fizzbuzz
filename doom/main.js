@@ -9,6 +9,14 @@ function readWasmString(offset, length) {
     return new TextDecoder('utf8').decode(bytes);
 }
 
+// Read a null-terminated C string from WASM linear memory.
+function readCString(ptr) {
+    const bytes = new Uint8Array(memory.buffer, ptr);
+    let len = 0;
+    while (bytes[len] !== 0) len++;
+    return new TextDecoder('utf8').decode(new Uint8Array(memory.buffer, ptr, len));
+}
+
 function consoleLogString(offset, length) {
     const string = readWasmString(offset, length);
     console.log("\"" + string + "\"");
@@ -326,6 +334,29 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
             }
 
             if (state.backpack !== undefined) ex.set_backpack(state.backpack ? 1 : 0);
+        };
+
+        /*Cast a ray from the player's current position in their facing direction
+          and return the first linedef wall hit, or null if nothing is within range.
+
+          Returns:
+            {
+              linedef:     number,   // index into DOOM's lines[] array
+              topTexture:  string,   // upper texture name (or "-" if none)
+              midTexture:  string,   // middle texture name (or "-" if none)
+              botTexture:  string,   // lower texture name (or "-" if none)
+            }
+        */
+        window.laserPointer = function () {
+            const ex = obj.instance.exports;
+            const linedef = ex.laser_pointer();
+            if (linedef < 0) return null;
+            return {
+                linedef,
+                topTexture: readCString(ex.laser_top_texture()),
+                midTexture: readCString(ex.laser_mid_texture()),
+                botTexture: readCString(ex.laser_bot_texture()),
+            };
         };
 
         /*Subscribe to the levelLoaded event. If a level has already loaded by the
