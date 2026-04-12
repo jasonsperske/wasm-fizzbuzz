@@ -16,6 +16,7 @@ extern "C" fn I_StartFrame() {
 
 // d_event.h: evtype_t
 #[repr(C)]
+#[allow(dead_code)] // variants are constructed by C (linuxdoom), not Rust
 pub enum EventType {
     KeyDown,
     KeyUp,
@@ -65,7 +66,7 @@ extern "C" fn I_StartTic() {
         unsafe {
             D_PostEvent(ev);
         }
-    };
+    }
 
     let mut q = INPUT_EVENT_QUEUE
         .lock()

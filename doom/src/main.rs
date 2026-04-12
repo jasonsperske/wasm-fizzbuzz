@@ -1,8 +1,5 @@
 use std::os::raw::{c_int};
-use std::ptr;
-
-#[macro_use]
-extern crate lazy_static;
+use std::ptr::addr_of;
 
 #[allow(non_camel_case_types)]
 pub type c_long_double = ::std::os::raw::c_double; //?
@@ -24,7 +21,7 @@ use doom::{log, println};
 static mut SINGLE_THREAD_ERRNO: c_int = 0; // YOLO
 #[no_mangle]
 extern "C" fn ___errno_location() -> *const c_int {
-    unsafe { &SINGLE_THREAD_ERRNO }
+    addr_of!(SINGLE_THREAD_ERRNO)
 }
 
 
@@ -61,26 +58,15 @@ extern "C" fn I_GetTime() -> c_int {
 }
 
 
-lazy_static! {
-    // ARGV must have 'static lifetime, since Doom may look at it at any point.
-    // The type signature ensures that the argv we are constructing lives forever.
-    // leaks memory, so it should only be called once.
-    static ref SAFE_ARGV: &'static [&'static [u8]] = {
-        // C strings end with zero
-        let argv0 = b"linuxxdoom\0";
-        let argv = vec![&argv0[..]];
-        argv.leak()
-    };
-}
+// Rust requires fn main() to have signature fn() — its ABI cannot be changed.
+// JS calls doom_start() instead, which receives argc/argv from the launcher.
+fn main() {}
 
-// only call once, leaks memory, because the argv we point to must live forever.
-fn make_c_argv() -> *const *const u8 {
-    let mut argv: std::vec::Vec<*const u8> = SAFE_ARGV.iter().map(|s| s.as_ptr()).collect();
-    argv.push(ptr::null()); // Calling convention compatibility: a final NULL separates argv from envp.
-    argv.leak().as_ptr()
-}
-
-fn main() {
+// argc and argv are written into WASM linear memory by the JS launcher
+// (see setupArgv in main.js) and passed here directly by the JS caller.
+// The pointers remain valid for the lifetime of the page.
+#[no_mangle]
+pub extern "C" fn doom_start(argc: c_int, argv: *const *const u8) {
     log!(
         "Hello, {}! Answer={} ({:b} in binary)",
         "World, from JS Console",
@@ -103,10 +89,9 @@ fn main() {
 
     println!("Hello, world from rust! 🦀🦀🦀 (println! working)");
 
-    // TODO: better set global variables and keep them alive forever.
     unsafe {
-        myargc = SAFE_ARGV.len() as c_int;
-        myargv = make_c_argv();
+        myargc = argc;
+        myargv = argv;
         D_DoomMain();
     };
 }

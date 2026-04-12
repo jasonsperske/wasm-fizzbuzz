@@ -195,6 +195,10 @@
         document.title = (dHovered ? 'R' : 'D') + 'oo' + (mHovered ? 'R' : 'M');
       }
 
+      window._doomReady = function() {
+        window._doomLaunch(['-warp', '1', '9']);
+      };
+
       document.querySelectorAll('.swap').forEach(el => {
         const letter = el.querySelector('.orig').textContent.toUpperCase();
         if (letter === 'D') {
