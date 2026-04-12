@@ -232,3 +232,86 @@ int doom_laser_pointer(void) {
 const char* doom_laser_top_texture(void) { return laser_top_tex; }
 const char* doom_laser_mid_texture(void) { return laser_mid_tex; }
 const char* doom_laser_bot_texture(void) { return laser_bot_tex; }
+
+// Populate the shared texture name buffers for an arbitrary linedef/side.
+// side: 0 = front, 1 = back.  Call the laser_*_texture() getters afterward.
+void doom_get_linedef_textures(int linedef_idx, int side) {
+    if (linedef_idx < 0 || linedef_idx >= numlines) {
+        laser_top_tex[0] = laser_mid_tex[0] = laser_bot_tex[0] = '-';
+        laser_top_tex[1] = laser_mid_tex[1] = laser_bot_tex[1] = '\0';
+        return;
+    }
+    line_t* ld = &lines[linedef_idx];
+    if (ld->sidenum[side] == -1) {
+        laser_top_tex[0] = laser_mid_tex[0] = laser_bot_tex[0] = '-';
+        laser_top_tex[1] = laser_mid_tex[1] = laser_bot_tex[1] = '\0';
+        return;
+    }
+    side_t* sd = &sides[ld->sidenum[side]];
+    copy_tex_name(laser_top_tex, sd->toptexture);
+    copy_tex_name(laser_mid_tex, sd->midtexture);
+    copy_tex_name(laser_bot_tex, sd->bottomtexture);
+}
+
+// ── Linedef crossing watcher ──────────────────────────────────────────────
+//
+// JS calls watch_linedef(idx) to register interest in a linedef.
+// doom_check_linedef_crossings() should be called each game tic (from JS
+// after doom_loop_step).  When the player's side relative to a watched line
+// changes, js_linedef_crossed(linedef_idx, from_side) is called.
+
+// JS import — defined in importObject.env in main.js.
+extern void js_linedef_crossed(int linedef_idx, int from_side);
+
+#define MAX_WATCHED_LINES 64
+
+typedef struct {
+    int linedef_idx;
+    int last_side;  // 0 or 1; -1 = not yet sampled
+} watched_entry_t;
+
+static watched_entry_t watched[MAX_WATCHED_LINES];
+static int            watched_count = 0;
+
+void doom_watch_linedef(int linedef_idx) {
+    if (linedef_idx < 0 || linedef_idx >= numlines) return;
+    // Ignore if already watched.
+    for (int i = 0; i < watched_count; i++)
+        if (watched[i].linedef_idx == linedef_idx) return;
+    if (watched_count >= MAX_WATCHED_LINES) return;
+    watched[watched_count].linedef_idx = linedef_idx;
+    watched[watched_count].last_side   = -1;
+    watched_count++;
+}
+
+void doom_unwatch_linedef(int linedef_idx) {
+    for (int i = 0; i < watched_count; i++) {
+        if (watched[i].linedef_idx == linedef_idx) {
+            watched[i] = watched[--watched_count]; // swap with last
+            return;
+        }
+    }
+}
+
+// Called each tic from JS.  Detects side changes for every watched linedef.
+void doom_check_linedef_crossings(void) {
+    player_t* p = &players[consoleplayer];
+    if (p->mo == NULL) return;
+
+    fixed_t px = p->mo->x;
+    fixed_t py = p->mo->y;
+
+    for (int i = 0; i < watched_count; i++) {
+        line_t* ld  = &lines[watched[i].linedef_idx];
+        int cur_side = P_PointOnLineSide(px, py, ld);
+
+        if (watched[i].last_side == -1) {
+            // First sample — just record, don't fire.
+            watched[i].last_side = cur_side;
+        } else if (cur_side != watched[i].last_side) {
+            int from_side = watched[i].last_side;
+            watched[i].last_side = cur_side;
+            js_linedef_crossed(watched[i].linedef_idx, from_side);
+        }
+    }
+}

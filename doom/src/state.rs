@@ -47,6 +47,12 @@ extern "C" {
     fn doom_laser_top_texture() -> *const u8;
     fn doom_laser_mid_texture() -> *const u8;
     fn doom_laser_bot_texture() -> *const u8;
+    fn doom_get_linedef_textures(linedef_idx: c_int, side: c_int);
+
+    // ── Linedef crossing watcher ─────────────────────────────────────────
+    fn doom_watch_linedef(linedef_idx: c_int);
+    fn doom_unwatch_linedef(linedef_idx: c_int);
+    fn doom_check_linedef_crossings();
 }
 
 // ── Getters ───────────────────────────────────────────────────────────────
@@ -96,7 +102,14 @@ extern "C" {
 
 // ── Laser pointer ─────────────────────────────────────────────────────────
 
-#[no_mangle] pub extern "C" fn laser_pointer()        -> c_int    { unsafe { doom_laser_pointer() } }
-#[no_mangle] pub extern "C" fn laser_top_texture()    -> *const u8 { unsafe { doom_laser_top_texture() } }
-#[no_mangle] pub extern "C" fn laser_mid_texture()    -> *const u8 { unsafe { doom_laser_mid_texture() } }
-#[no_mangle] pub extern "C" fn laser_bot_texture()    -> *const u8 { unsafe { doom_laser_bot_texture() } }
+#[no_mangle] pub extern "C" fn laser_pointer()                              -> c_int    { unsafe { doom_laser_pointer() } }
+#[no_mangle] pub extern "C" fn laser_top_texture()                          -> *const u8 { unsafe { doom_laser_top_texture() } }
+#[no_mangle] pub extern "C" fn laser_mid_texture()                          -> *const u8 { unsafe { doom_laser_mid_texture() } }
+#[no_mangle] pub extern "C" fn laser_bot_texture()                          -> *const u8 { unsafe { doom_laser_bot_texture() } }
+#[no_mangle] pub extern "C" fn get_linedef_textures(idx: c_int, side: c_int) { unsafe { doom_get_linedef_textures(idx, side) } }
+
+// ── Linedef crossing watcher ──────────────────────────────────────────────
+
+#[no_mangle] pub extern "C" fn watch_linedef(idx: c_int)   { unsafe { doom_watch_linedef(idx) } }
+#[no_mangle] pub extern "C" fn unwatch_linedef(idx: c_int) { unsafe { doom_unwatch_linedef(idx) } }
+#[no_mangle] pub extern "C" fn check_linedef_crossings()   { unsafe { doom_check_linedef_crossings() } }

@@ -65,6 +65,20 @@ var importObject = {
             window._lastLevelLoaded = { episode, map };
             document.dispatchEvent(new CustomEvent('levelLoaded', { detail: { episode, map } }));
         },
+        js_linedef_crossed: (linedefIdx, fromSide) => {
+            const listeners = linedefListeners.get(linedefIdx);
+            if (!listeners || listeners.size === 0) return;
+            // Populate the shared texture buffers for this linedef/side.
+            _doomExports.get_linedef_textures(linedefIdx, fromSide);
+            const info = {
+                linedef:    linedefIdx,
+                fromSide,
+                topTexture: readCString(_doomExports.laser_top_texture()),
+                midTexture: readCString(_doomExports.laser_mid_texture()),
+                botTexture: readCString(_doomExports.laser_bot_texture()),
+            };
+            listeners.forEach(cb => cb(info));
+        },
     }
 };
 
@@ -99,9 +113,14 @@ function setupArgv(args) {
     return { argc: args.length, argvPtr };
 }
 
+// Shared state needed by importObject.env handlers before obj is available.
+const linedefListeners = new Map(); // linedefIdx → Set<callback>
+let _doomExports = null;            // set once WASM is instantiated
+
 console.log('[doom] fetching doom.wasm...');
 WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
     .then(obj => {
+        _doomExports = obj.instance.exports;
         console.log('[doom] wasm loaded. exports:', Object.keys(obj.instance.exports));
 
         /*Launch DOOM with the given extra arguments (e.g. ["-warp", "1", "9"]).
@@ -201,6 +220,7 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
             console.log('[doom] starting game loop');
             function step(timestamp) {
                 obj.instance.exports.doom_loop_step();
+                obj.instance.exports.check_linedef_crossings();
                 window.requestAnimationFrame(step);
             }
             window.requestAnimationFrame(step);
@@ -357,6 +377,37 @@ WebAssembly.instantiateStreaming(fetch('doom.wasm'), importObject)
                 midTexture: readCString(ex.laser_mid_texture()),
                 botTexture: readCString(ex.laser_bot_texture()),
             };
+        };
+
+        /*Subscribe to linedef-crossing events for a specific linedef index.
+          The callback receives an object:
+            {
+              linedef:     number,   // index into DOOM's lines[] array
+              fromSide:    number,   // 0 = crossed from front, 1 = crossed from back
+              topTexture:  string,
+              midTexture:  string,
+              botTexture:  string,
+            }
+          Returns the callback so it can be passed to offLinedefCrossed later.*/
+        window.onLinedefCrossed = function(linedefIdx, callback) {
+            if (!linedefListeners.has(linedefIdx)) {
+                linedefListeners.set(linedefIdx, new Set());
+                _doomExports.watch_linedef(linedefIdx);
+            }
+            linedefListeners.get(linedefIdx).add(callback);
+            return callback;
+        };
+
+        /*Remove a callback registered with onLinedefCrossed.
+          If no callbacks remain for the linedef, the C watcher is also removed.*/
+        window.offLinedefCrossed = function(linedefIdx, callback) {
+            const listeners = linedefListeners.get(linedefIdx);
+            if (!listeners) return;
+            listeners.delete(callback);
+            if (listeners.size === 0) {
+                linedefListeners.delete(linedefIdx);
+                _doomExports.unwatch_linedef(linedefIdx);
+            }
         };
 
         /*Subscribe to the levelLoaded event. If a level has already loaded by the

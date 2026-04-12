@@ -205,6 +205,10 @@
       document.addEventListener('levelLoaded', (e) => {
         console.log('Level ready:', e.detail);
         console.log('Player state:', saveState());
+        onLinedefCrossed(49, info => {
+          console.log('[linedef 49] crossed from side', info.fromSide,
+            '— top:', info.topTexture, 'mid:', info.midTexture, 'bot:', info.botTexture);
+        });
       });
 
       document.querySelectorAll('.swap').forEach(el => {
