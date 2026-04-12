@@ -199,6 +199,14 @@
         window._doomLaunch(['-warp', '1', '9']);
       };
 
+      // Inline scripts run before deferred main.js, so this listener is always
+      // registered before any level loads — whether via -warp on startup or
+      // after the player selects an episode and difficulty from the menu.
+      document.addEventListener('levelLoaded', (e) => {
+        console.log('Level ready:', e.detail);
+        console.log('Player state:', saveState());
+      });
+
       document.querySelectorAll('.swap').forEach(el => {
         const letter = el.querySelector('.orig').textContent.toUpperCase();
         if (letter === 'D') {

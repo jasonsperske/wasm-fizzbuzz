@@ -70,6 +70,8 @@ rcsid[] = "$Id: g_game.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 
 #include "g_game.h"
 
+// Imported from the JS host; called when a level finishes loading.
+extern void js_level_loaded(int episode, int map);
 
 #define SAVEGAMESIZE	0x2c000
 #define SAVESTRINGSIZE	24
@@ -492,9 +494,12 @@ void G_DoLoadLevel (void)
     joyxmove = joyymove = 0; 
     mousex = mousey = 0; 
     sendpause = sendsave = paused = false; 
-    memset (mousebuttons, 0, sizeof(mousebuttons)); 
-    memset (joybuttons, 0, sizeof(joybuttons)); 
-} 
+    memset (mousebuttons, 0, sizeof(mousebuttons));
+    memset (joybuttons, 0, sizeof(joybuttons));
+
+    // Notify the JS host that the level is fully loaded and ready.
+    js_level_loaded(gameepisode, gamemap);
+}
  
  
 //
