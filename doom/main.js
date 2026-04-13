@@ -14,21 +14,16 @@ function readCString(ptr) {
     return new TextDecoder('utf8').decode(new Uint8Array(memory.buffer, ptr, len));
 }
 
-function consoleLogString(offset, length) {
-    const string = readWasmString(offset, length);
-    console.log("\"" + string + "\"");
-}
-
 function appendOutput(style) {
     return function (offset, length) {
-        const lines = readWasmString(offset, length).split('\n');
-        for (var i = 0; i < lines.length; ++i) {
-            if (lines[i].length == 0) {
-                continue;
-            }
-            // uncomment to see engine output
-            // console.log(lines[i]);
-        }
+        // uncomment to see engine output
+        // const lines = readWasmString(offset, length).split('\n');
+        // for (var i = 0; i < lines.length; ++i) {
+        //     if (lines[i].length == 0) {
+        //         continue;
+        //     }            
+        //     console.log(lines[i]);
+        // }
     }
 }
 
@@ -59,7 +54,6 @@ var importObject = {
         memory: memory,
         // C externs compile to "env" module imports in wasm32, not "js"
         js_level_loaded: (episode, map) => {
-            console.log(`[doom] level loaded: episode ${episode}, map ${map}`);
             window._lastLevelLoaded = { episode, map };
             document.dispatchEvent(new CustomEvent('levelLoaded', { detail: { episode, map } }));
         },
@@ -198,7 +192,6 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
             ["ctrlButton", 0x80 + 0x1d],
             ["spaceButton", 32],
             ["altButton", 0x80 + 0x38]].forEach(([elementID, keyCode]) => {
-                console.log(elementID + " for " + keyCode);
                 var button = document.getElementById(elementID);
                 //button.addEventListener("click", () => {keyDown(keyCode); keyUp(keyCode)} );
                 button.addEventListener("touchstart", () => keyDown(keyCode));
@@ -223,7 +216,6 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
             printFocusInHint();
 
             /*Main game loop*/
-            console.log('[doom] starting game loop');
             function step(timestamp) {
                 obj.instance.exports.doom_loop_step();
                 obj.instance.exports.check_linedef_crossings();
@@ -465,16 +457,11 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
         };
 
         /*Signal to the page that WASM is loaded and _doomLaunch is ready*/
-        console.log('[doom] wasm ready. window._doomReady is:', typeof window._doomReady);
         if (typeof window._doomReady === 'function') {
             window._doomReady();
         } else {
             console.warn('[doom] window._doomReady is not defined — game will not start. Call window._doomLaunch([]) to start manually.');
         }
-        document.addEventListener('levelLoaded', (e) => {
-            console.log('Level ready:', e.detail); // { episode: 1, map: 9 }                                        
-            const state = saveState();             // x, y, angle all valid now                                       
-        });
     }).catch(err => {
         console.error('[doom] failed to load doom.wasm:', err);
     });
