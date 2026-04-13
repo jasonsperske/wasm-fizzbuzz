@@ -296,7 +296,22 @@ void doom_unwatch_linedef(int linedef_idx) {
     }
 }
 
+// Returns true if (px, py) projects onto the finite extent of the line segment
+// (i.e. the perpendicular foot falls between v1 and v2).
+// Uses 64-bit arithmetic to avoid fixed_t overflow on large maps.
+static boolean within_linedef_extent(fixed_t px, fixed_t py, line_t* ld) {
+    long long ex    = (long long)(px - ld->v1->x);
+    long long ey    = (long long)(py - ld->v1->y);
+    long long dx    = (long long)ld->dx;
+    long long dy    = (long long)ld->dy;
+    long long dot   = ex * dx + ey * dy;
+    long long lenSq = dx * dx + dy * dy;
+    return dot >= 0 && dot <= lenSq;
+}
+
 // Called each tic from JS.  Detects side changes for every watched linedef.
+// last_side is always updated so state stays consistent; the event only fires
+// when the player is within the finite extent of the segment.
 void doom_check_linedef_crossings(void) {
     player_t* p = &players[consoleplayer];
     if (p->mo == NULL) return;
@@ -314,7 +329,9 @@ void doom_check_linedef_crossings(void) {
         } else if (cur_side != watched[i].last_side) {
             int from_side = watched[i].last_side;
             watched[i].last_side = cur_side;
-            js_linedef_crossed(watched[i].linedef_idx, from_side);
+            if (within_linedef_extent(px, py, ld)) {
+                js_linedef_crossed(watched[i].linedef_idx, from_side);
+            }
         }
     }
 }

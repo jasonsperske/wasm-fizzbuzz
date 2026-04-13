@@ -213,8 +213,9 @@
       document.title = (dHovered ? 'R' : 'D') + 'oo' + (mHovered ? 'R' : 'M');
     }
     function handleBackroomsDoor(episode, level, door) {
-      return () => {
-        window.location.href = `https://backrooms.zone/door?source=${encodeURIComponent('https://jasonsperske.github.io/doom/')}&door=${encodeURIComponent(door)}`;
+      return (e) => {
+        console.log(e);
+        //window.location.href = `https://backrooms.zone/door?source=${encodeURIComponent('https://jasonsperske.github.io/doom/')}&door=${encodeURIComponent(door)}`;
       }
     }
 
