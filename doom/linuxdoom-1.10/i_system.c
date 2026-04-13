@@ -113,6 +113,9 @@ void I_Init (void)
 //
 // I_Quit
 //
+// JS import: fires the doomQuit event and stops the requestAnimationFrame loop.
+extern void js_doom_quit (void);
+
 void I_Quit (void)
 {
     D_QuitNetGame ();
@@ -120,20 +123,16 @@ void I_Quit (void)
     I_ShutdownMusic();
     M_SaveDefaults ();
     I_ShutdownGraphics();
-    exit(0);
+    // Do not call exit() — musl's WASM exit hits an unimplemented nanosleep
+    // syscall.  Notify JS instead; it will stop the game loop.
+    js_doom_quit();
 }
 
 void I_WaitVBL(int count)
 {
-#ifdef SGI
-    sginap(1);                                           
-#else
-#ifdef SUN
-    sleep(0);
-#else
-    usleep (count * (1000000/70) );                                
-#endif
-#endif
+    // No-op in WASM: frame pacing is handled by requestAnimationFrame.
+    // musl's usleep hits an unimplemented nanosleep syscall and crashes.
+    (void)count;
 }
 
 void I_BeginRead(void)

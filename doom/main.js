@@ -53,6 +53,10 @@ var importObject = {
     env: {
         memory: memory,
         // C externs compile to "env" module imports in wasm32, not "js"
+        js_doom_quit: () => {
+            _doomRunning = false;
+            document.dispatchEvent(new CustomEvent('doomQuit'));
+        },
         js_level_loaded: (episode, map) => {
             window._lastLevelLoaded = { episode, map };
             // C has already cleared the watcher list for the new level.
@@ -126,6 +130,7 @@ function setupArgv(args) {
 const linedefListeners = new Map(); // linedefIdx → Set<callback>  (crossing)
 const useListeners = new Map(); // linedefIdx → Set<callback>  (use/activate)
 let _doomExports = null;            // set once WASM is instantiated
+let _doomRunning = true;            // cleared by js_doom_quit to stop the loop
 
 WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
     .then(obj => {
@@ -222,7 +227,7 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
             function step(timestamp) {
                 obj.instance.exports.doom_loop_step();
                 obj.instance.exports.check_linedef_crossings();
-                window.requestAnimationFrame(step);
+                if (_doomRunning) window.requestAnimationFrame(step);
             }
             window.requestAnimationFrame(step);
         };
@@ -456,6 +461,16 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
                 }
             } else {
                 document.addEventListener('levelLoaded', callback, { once });
+            }
+        };
+
+        /*Subscribe to the doomQuit event, fired when the player confirms quit.
+          The game loop has already been stopped by the time the callback runs.*/
+        window.onDoomQuit = function(callback) {
+            if (!_doomRunning) {
+                callback(new CustomEvent('doomQuit'));
+            } else {
+                document.addEventListener('doomQuit', callback, { once: true });
             }
         };
 

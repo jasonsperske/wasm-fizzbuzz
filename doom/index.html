@@ -266,6 +266,10 @@
         });
     });
 
+    document.addEventListener('doomQuit', () => {
+      window.location.href = 'https://backrooms.zone/';
+    });
+
     document.querySelectorAll('.swap').forEach(el => {
       const letter = el.querySelector('.orig').textContent.toUpperCase();
       if (letter === 'D') {
