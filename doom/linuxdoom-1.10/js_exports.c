@@ -287,6 +287,13 @@ void doom_watch_linedef(int linedef_idx) {
     watched_count++;
 }
 
+// Called from G_DoLoadLevel before the new level's lines[] is populated.
+// Clears all watchers so stale indices from the old level don't cause
+// out-of-bounds memory accesses.  JS re-registers watchers on levelLoaded.
+void doom_clear_linedef_watchers(void) {
+    watched_count = 0;
+}
+
 void doom_unwatch_linedef(int linedef_idx) {
     for (int i = 0; i < watched_count; i++) {
         if (watched[i].linedef_idx == linedef_idx) {

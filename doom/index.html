@@ -28,7 +28,7 @@
     /* Canvas fills the viewport, preserving native 640×400 (8:5) aspect ratio */
     #screen {
       display: block;
-      width: min(100vw, 160vh);
+      width: min(91vw, 160vh);
       /* 160vh = 100vh * (640/400) */
       height: auto;
       aspect-ratio: 640 / 400;
@@ -149,24 +149,17 @@
 </head>
 
 <body>
-
-  <!-- ── Canvas: fills the visible viewport ──────────────── -->
   <canvas id="screen" width="640" height="400" tabindex="0">
     This is where the DooM screen should render.
   </canvas>
-
-  <!-- ── Scroll down for controls & info ─────────────────── -->
   <div class="dos-panel">
-
-    <div class="dos-title-bar">&#x2588; <span class="swap"><span class="orig">D</span><span class="rep"
+    <div class="dos-title-bar">[ <span class="swap"><span class="orig">D</span><span class="rep"
           aria-hidden="true">R</span></span>oo<span class="swap"><span class="orig">M</span><span class="rep"
-          aria-hidden="true">R</span></span>.EXE &mdash; WebAssembly Edition &#x2588;</div>
-
+          aria-hidden="true">R</span></span>.EXE &mdash; WebAssembly Edition ]</div>
     <div class="dos-box">
       <p class="dos-section-label">&#x25BA; STATUS</p>
       <p id="focushint"></p>
     </div>
-
     <div class="dos-box">
       <p class="dos-section-label">&#x25BA; CONTROLS</p>
       <p>
@@ -185,9 +178,7 @@
       </p>
       <p class="dim">On mobile, tap the buttons above.</p>
     </div>
-
     <hr class="dos-hr">
-
     <p>
       A wasm32 port of 1997 linux<span class="swap"><span class="orig">d</span><span class="rep"
           aria-hidden="true">r</span></span>oo<span class="swap"><span class="orig">m</span><span class="rep"
@@ -201,7 +192,6 @@
     <p class="dim">C:\<span class="swap"><span class="orig">D</span><span class="rep"
           aria-hidden="true">R</span></span>OO<span class="swap"><span class="orig">M</span><span class="rep"
           aria-hidden="true">R</span></span>&gt; _</p>
-
   </div>
 
   <script src="/doom/main.js" defer></script>
@@ -219,44 +209,62 @@
       }
     }
 
+    let episode = 1;
+    let level = 1;
+    let door = undefined
+    let listeners = [];
+
     if (window.location.pathname.match(/^\/doom\/E\dM\d(?:\/(\w+).html)?/)) {
       const pathParts = window.location.pathname.split('/').filter(Boolean);
-      const episode = pathParts[1].match(/^E(\d)/)[1];
-      const level = pathParts[1].match(/M(\d)/)[1];
-      const door = pathParts[2] ? pathParts[2].match(/(.*).html/)[1] : '';
-
-      fetch(`/doom/E${episode}M${level}.json`)
-        .then(res => res.json())
-        .then(room => {
-          window._doomReady = function () {
-            window._doomLaunch(['-warp', room.episode, room.level]);
-          };
-          document.addEventListener('levelLoaded', (e) => {
-            if (door in room.doors) {
-              setState(room.doors[door])
-            }
-            const listeners =
-              room.listeners.map(listener => {
-                let handler = handleBackroomsDoor(episode, level, listener.door);
-                switch (listener.type) {
-                  case 'cross':
-                    onLinedefCrossed(listener.linedef, handler);
-                    break;
-                  case 'use':
-                    onLinedefUsed(listener.linedef, handler);
-                    break;
-                }
-                return handler
-              })
-          });
-        });
+      episode = parseInt(pathParts[1].match(/^E(\d)/)[1], 10);
+      level = parseInt(pathParts[1].match(/M(\d)/)[1], 10);
+      door = pathParts[2]?.match(/(.*).html/)[1];
+      window._doomReady = function () {
+        window._doomLaunch(['-warp', episode, level]);
+      };
     } else {
       window._doomReady = function () {
         window._doomLaunch([]);
       };
     }
 
-
+    document.addEventListener('levelLoaded', ({ detail }) => {
+      fetch(`/doom/E${detail.episode}M${detail.map}.json`)
+        .then(res => res.json())
+        .then(room => {
+          if (level === detail.map && episode === detail.episode && door in room.doors) {
+            setState(room.doors[door])
+            door = undefined;
+          }
+          listeners.forEach(listener => {
+            switch (listener.type) {
+              case 'cross':
+                offLinedefCrossed(listener.linedef, listener.handler);
+                break;
+              case 'use':
+                offLinedefUsed(listener.linedef, listener.handler);
+                break;
+            }
+          });
+          listeners =
+            room.listeners.map(listener => {
+              switch (listener.type) {
+                case 'cross':
+                  return {
+                    linedef: listener.linedef,
+                    type: 'cross',
+                    handler: onLinedefCrossed(listener.linedef, handleBackroomsDoor(episode, level, listener.door))
+                  }
+                case 'use':
+                  return {
+                    linedef: listener.linedef,
+                    type: 'use',
+                    handler: onLinedefUsed(listener.linedef, handleBackroomsDoor(episode, level, listener.door))
+                  }
+              }
+            })
+        });
+    });
 
     document.querySelectorAll('.swap').forEach(el => {
       const letter = el.querySelector('.orig').textContent.toUpperCase();

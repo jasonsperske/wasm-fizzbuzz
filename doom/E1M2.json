@@ -1,0 +1,30 @@
+{
+    "episode": 1,
+    "level": 2,
+    "listeners": [
+        {
+            "type": "cross",
+            "linedef": 592,
+            "door": "E1M2-secret"
+        },
+        {
+            "type": "use",
+            "linedef": 690,
+            "door": "E1M2-viewport"
+        }
+    ],
+    "doors": {
+        "E1M2-secret": {
+            "x": -1137.1131134033203,
+            "y": 230.85157775878906,
+            "angleDeg": 177.1875,
+            "redCard": true
+        },
+        "E1M2-viewport": {
+            "x": -1872.0104675292969,
+            "y": 1135.9888458251953,
+            "angleDeg": -128.671875,
+            "redCard": true
+        }
+    }
+}

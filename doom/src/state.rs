@@ -51,6 +51,7 @@ extern "C" {
     fn doom_get_linedef_textures(linedef_idx: c_int, side: c_int);
 
     // ── Linedef crossing watcher ─────────────────────────────────────────
+    fn doom_clear_linedef_watchers();
     fn doom_watch_linedef(linedef_idx: c_int);
     fn doom_unwatch_linedef(linedef_idx: c_int);
     fn doom_check_linedef_crossings();
@@ -112,6 +113,7 @@ extern "C" {
 
 // ── Linedef crossing watcher ──────────────────────────────────────────────
 
+#[no_mangle] pub extern "C" fn clear_linedef_watchers()    { unsafe { doom_clear_linedef_watchers() } }
 #[no_mangle] pub extern "C" fn watch_linedef(idx: c_int)   { unsafe { doom_watch_linedef(idx) } }
 #[no_mangle] pub extern "C" fn unwatch_linedef(idx: c_int) { unsafe { doom_unwatch_linedef(idx) } }
 #[no_mangle] pub extern "C" fn check_linedef_crossings()   { unsafe { doom_check_linedef_crossings() } }

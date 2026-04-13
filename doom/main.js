@@ -55,6 +55,9 @@ var importObject = {
         // C externs compile to "env" module imports in wasm32, not "js"
         js_level_loaded: (episode, map) => {
             window._lastLevelLoaded = { episode, map };
+            // C has already cleared the watcher list for the new level.
+            // Re-register every linedef that JS still has callbacks for.
+            linedefListeners.forEach((_, idx) => _doomExports.watch_linedef(idx));
             document.dispatchEvent(new CustomEvent('levelLoaded', { detail: { episode, map } }));
         },
         js_linedef_used: (linedefIdx, side) => {

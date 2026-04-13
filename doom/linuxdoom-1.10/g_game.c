@@ -73,6 +73,10 @@ rcsid[] = "$Id: g_game.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 // Imported from the JS host; called when a level finishes loading.
 extern void js_level_loaded(int episode, int map);
 
+// Clears linedef crossing watchers so stale indices from the old level
+// don't survive into the new level's lines[] array.
+extern void doom_clear_linedef_watchers(void);
+
 #define SAVEGAMESIZE	0x2c000
 #define SAVESTRINGSIZE	24
 
@@ -496,6 +500,10 @@ void G_DoLoadLevel (void)
     sendpause = sendsave = paused = false; 
     memset (mousebuttons, 0, sizeof(mousebuttons));
     memset (joybuttons, 0, sizeof(joybuttons));
+
+    // Clear stale linedef watchers before notifying JS so that
+    // check_linedef_crossings() never sees indices from the old level.
+    doom_clear_linedef_watchers();
 
     // Notify the JS host that the level is fully loaded and ready.
     js_level_loaded(gameepisode, gamemap);
