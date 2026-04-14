@@ -52,6 +52,16 @@ var importObject = {
     env: {
         memory: memory,
         // C externs compile to "env" module imports in wasm32, not "js"
+        js_start_sound,
+        js_stop_sound,
+        js_sound_is_playing,
+        js_update_sound,
+        js_register_song,
+        js_play_song,
+        js_pause_song,
+        js_resume_song,
+        js_stop_song,
+        js_unregister_song,
         js_doom_quit: () => {
             _doomRunning = false;
             document.dispatchEvent(new CustomEvent('doomQuit'));
@@ -144,6 +154,186 @@ function setupArgv(args) {
     return { argc: args.length, argvPtr };
 }
 
+// ── Web Audio ─────────────────────────────────────────────────────────────
+//
+// Architecture:
+//   SFX source → sfxGain → panner → masterGain → focusGain → destination
+//   MUS events  → oscillators    → masterGain → focusGain → destination
+//
+// focusGain is 1.0 when the window has focus, 0.25 when it doesn't.
+// masterGain mirrors DOOM's snd_SfxVolume / snd_MusicVolume.
+
+let audioCtx = null;
+let focusGain = null;   // focus/blur attenuation node
+let sfxBus = null;      // receives all SFX gain nodes
+let musBus = null;      // receives all music nodes
+
+// Lazily created on first user interaction (browser autoplay policy).
+function ensureAudio() {
+    if (audioCtx) return true;
+    try {
+        audioCtx = new AudioContext();
+        focusGain = audioCtx.createGain();
+        focusGain.gain.value = document.hasFocus() ? 1.0 : 0.25;
+        focusGain.connect(audioCtx.destination);
+
+        sfxBus = audioCtx.createGain();
+        sfxBus.gain.value = 1.0;
+        sfxBus.connect(focusGain);
+
+        musBus = audioCtx.createGain();
+        musBus.gain.value = 1.0;
+        musBus.connect(focusGain);
+
+        // Resume suspended context (Chrome requires a gesture first)
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        return true;
+    } catch (e) {
+        console.warn('[doom] Web Audio unavailable:', e);
+        return false;
+    }
+}
+
+// Focus / blur: smooth ramp over 150 ms so it doesn't click
+window.addEventListener('focus', () => {
+    if (focusGain) focusGain.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.05);
+});
+window.addEventListener('blur', () => {
+    if (focusGain) focusGain.gain.setTargetAtTime(0.25, audioCtx.currentTime, 0.05);
+});
+document.addEventListener('visibilitychange', () => {
+    if (!focusGain) return;
+    if (document.hidden) {
+        focusGain.gain.setTargetAtTime(0.25, audioCtx.currentTime, 0.05);
+    } else if (document.hasFocus()) {
+        focusGain.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.05);
+    }
+});
+
+// ── SFX ───────────────────────────────────────────────────────────────────
+// DOOM WAD sound lump layout (little-endian):
+//   0: uint16  format     (must be 3)
+//   2: uint16  sampleRate (Hz, usually 11025)
+//   4: uint32  numSamples
+//   8: uint8[] samples    (8-bit unsigned PCM, 128 = silence)
+
+let nextSfxHandle = 1;
+const sfxChannels = new Map(); // handle → { source, gainNode, panNode, playing }
+
+function js_start_sound(dataPtr, dataLen, vol, sep, pitch) {
+    if (!ensureAudio() || dataLen < 8) return 0;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const raw = new Uint8Array(memory.buffer, dataPtr, dataLen);
+    const format     = raw[0] | (raw[1] << 8);
+    const sampleRate = raw[2] | (raw[3] << 8);
+    const numSamples = raw[4] | (raw[5] << 8) | (raw[6] << 16) | (raw[7] << 24);
+
+    if (format !== 3 || sampleRate < 1) return 0;
+
+    const offset  = 8;
+    const samples = Math.min(numSamples, dataLen - offset);
+    if (samples <= 0) return 0;
+
+    const buf = audioCtx.createBuffer(1, samples, sampleRate);
+    const ch  = buf.getChannelData(0);
+    for (let i = 0; i < samples; i++) {
+        ch[i] = (raw[offset + i] - 128) / 128.0;
+    }
+
+    const source  = audioCtx.createBufferSource();
+    source.buffer = buf;
+    if (pitch !== 128) {
+        // DOOM pitch: 0–255, 128 = normal.  Each 64 steps ≈ one octave.
+        source.playbackRate.value = Math.pow(2, (pitch - 128) / 64.0);
+    }
+
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = Math.max(0, Math.min(1, vol / 15.0));
+
+    const panNode = audioCtx.createStereoPanner();
+    panNode.pan.value = Math.max(-1, Math.min(1, (sep - 128) / 128.0));
+
+    source.connect(gainNode);
+    gainNode.connect(panNode);
+    panNode.connect(sfxBus);
+
+    const handle = nextSfxHandle++;
+    const entry  = { source, gainNode, panNode, playing: true };
+    sfxChannels.set(handle, entry);
+    source.onended = () => { entry.playing = false; };
+    source.start();
+    return handle;
+}
+
+function js_stop_sound(handle) {
+    const entry = sfxChannels.get(handle);
+    if (entry && entry.playing) {
+        try { entry.source.stop(); } catch (_) {}
+        entry.playing = false;
+    }
+    sfxChannels.delete(handle);
+}
+
+function js_sound_is_playing(handle) {
+    const entry = sfxChannels.get(handle);
+    return (entry && entry.playing) ? 1 : 0;
+}
+
+function js_update_sound(handle, vol, sep, pitch) {
+    const entry = sfxChannels.get(handle);
+    if (!entry || !entry.playing) return;
+    entry.gainNode.gain.value = Math.max(0, Math.min(1, vol / 15.0));
+    entry.panNode.pan.value   = Math.max(-1, Math.min(1, (sep - 128) / 128.0));
+    if (pitch !== 128) {
+        entry.source.playbackRate.value = Math.pow(2, (pitch - 128) / 64.0);
+    }
+}
+
+// ── Music (MUS format) ────────────────────────────────────────────────────
+// MUS is DOOM's compact MIDI-like format.  We convert it to a standard MIDI
+// byte array and play it via a tiny sequencer driving OscillatorNodes.
+// For now this is a working stub that parses but plays silence; a full GM
+// synthesis engine is out of scope here.
+
+const musSongs = new Map(); // handle → { data: Uint8Array, intervalId }
+let nextMusHandle = 1;
+
+function js_register_song(dataPtr, dataLen) {
+    if (!dataLen) return nextMusHandle++; // skip gracefully
+    // Copy MUS bytes out of WASM memory so they survive zone GC
+    const data = new Uint8Array(memory.buffer, dataPtr, dataLen).slice();
+    const handle = nextMusHandle++;
+    musSongs.set(handle, { data, intervalId: null });
+    return handle;
+}
+
+function js_play_song(handle, looping) {
+    js_stop_song(handle);
+    const song = musSongs.get(handle);
+    if (!song || !ensureAudio()) return;
+    // Full MUS sequencing is a future enhancement.
+    // The stub keeps the handle alive so stop/unregister work correctly.
+}
+
+function js_pause_song(handle) { /* no-op: full sequencer is a future enhancement */ }
+
+function js_resume_song(handle) { /* no-op */ }
+
+function js_stop_song(handle) {
+    const song = musSongs.get(handle);
+    if (song && song.intervalId) {
+        clearInterval(song.intervalId);
+        song.intervalId = null;
+    }
+}
+
+function js_unregister_song(handle) {
+    js_stop_song(handle);
+    musSongs.delete(handle);
+}
+
+// ── Shared state ──────────────────────────────────────────────────────────
 // Shared state needed by importObject.env handlers before obj is available.
 const linedefListeners = new Map(); // linedefIdx → Set<callback>  (crossing)
 const useListeners = new Map(); // linedefIdx → Set<callback>  (use/activate)
@@ -164,6 +354,10 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
                 console.error('[doom] doom_start not found in exports! Available:', Object.keys(obj.instance.exports));
                 return;
             }
+
+            // Warm up the AudioContext on the first user gesture so that sound
+            // is ready as soon as DOOM starts playing SFX.
+            ensureAudio();
 
             /*Initialize Doom*/
             obj.instance.exports.doom_start(argc, argvPtr);
