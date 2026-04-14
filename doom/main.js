@@ -16,14 +16,13 @@ function readCString(ptr) {
 
 function appendOutput(style) {
     return function (offset, length) {
-        // uncomment to see engine output
-        // const lines = readWasmString(offset, length).split('\n');
-        // for (var i = 0; i < lines.length; ++i) {
-        //     if (lines[i].length == 0) {
-        //         continue;
-        //     }            
-        //     console.log(lines[i]);
-        // }
+        const lines = readWasmString(offset, length).split('\n');
+        for (var i = 0; i < lines.length; ++i) {
+            if (lines[i].length == 0) {
+                continue;
+            }
+            console.log('[doom]', lines[i]);
+        }
     }
 }
 
@@ -56,6 +55,25 @@ var importObject = {
         js_doom_quit: () => {
             _doomRunning = false;
             document.dispatchEvent(new CustomEvent('doomQuit'));
+        },
+        js_doom_error: (ptr) => {
+            _doomRunning = false;
+            const msg = readCString(ptr);
+            console.error('[doom] I_Error:', msg);
+            document.dispatchEvent(new CustomEvent('doomError', { detail: { message: msg } }));
+            throw new Error('[doom] I_Error: ' + msg);
+        },
+        js_save_config: (ptr, len) => {
+            const str = new TextDecoder('utf8').decode(new Uint8Array(memory.buffer, ptr, len));
+            localStorage.setItem('doom_config', str);
+        },
+        js_load_config: (ptr, maxlen) => {
+            const saved = localStorage.getItem('doom_config');
+            if (!saved) return 0;
+            const encoded = new TextEncoder().encode(saved);
+            const count = Math.min(encoded.length, maxlen - 1);
+            new Uint8Array(memory.buffer, ptr, count).set(encoded.subarray(0, count));
+            return count;
         },
         js_level_loaded: (episode, map) => {
             window._lastLevelLoaded = { episode, map };
@@ -473,6 +491,13 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
                 document.addEventListener('doomQuit', callback, { once: true });
             }
         };
+
+        /*Save settings whenever the page is closed or refreshed so that
+          changes made in the options menu survive without requiring the
+          player to quit through DOOM's own quit dialog.*/
+        window.addEventListener('beforeunload', () => {
+            if (_doomRunning) obj.instance.exports.save_defaults();
+        });
 
         /*Signal to the page that WASM is loaded and _doomLaunch is ready*/
         if (typeof window._doomReady === 'function') {

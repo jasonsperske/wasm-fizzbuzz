@@ -4,6 +4,12 @@
 use std::os::raw::c_int;
 
 extern "C" {
+    fn M_SaveDefaults();
+}
+
+#[no_mangle] pub extern "C" fn save_defaults() { unsafe { M_SaveDefaults() } }
+
+extern "C" {
     // ── Getters ──────────────────────────────────────────────────────────
     fn doom_get_player_x() -> c_int;
     fn doom_get_player_y() -> c_int;

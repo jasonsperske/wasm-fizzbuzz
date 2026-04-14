@@ -31,9 +31,16 @@ rcsid[] = "$Id: m_misc.c,v 1.6 1997/02/03 22:45:10 b1 Exp $";
 #include <sys/types.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 
 #include <ctype.h>
+
+// JS imports for persisting and restoring the config in localStorage.
+extern void js_save_config (const char* data, int len);
+extern int  js_load_config (char* buf, int maxlen); // returns bytes written, 0 if none
+
+#define CONFIG_BUF_SIZE 8192
 
 
 #include "doomdef.h"
@@ -309,28 +316,129 @@ void M_SaveDefaults (void)
 {
     int		i;
     int		v;
-    FILE*	f;
-	
-    f = fopen (defaultfile, "w");
-    if (!f)
-	return; // can't write the file, but don't complain
-		
+    char	buf[CONFIG_BUF_SIZE];
+    int		pos = 0;
+
     for (i=0 ; i<numdefaults ; i++)
     {
 	if (defaults[i].defaultvalue > -0xfff
 	    && defaults[i].defaultvalue < 0xfff)
 	{
 	    v = *defaults[i].location;
-	    fprintf (f,"%s\t\t%i\n",defaults[i].name,v);
+	    pos += snprintf(buf+pos, CONFIG_BUF_SIZE-pos,
+			   "%s\t\t%i\n", defaults[i].name, v);
 	} else {
-	    fprintf (f,"%s\t\t\"%s\"\n",defaults[i].name,
-		     * (char **) (defaults[i].location));
+	    pos += snprintf(buf+pos, CONFIG_BUF_SIZE-pos,
+			   "%s\t\t\"%s\"\n", defaults[i].name,
+			   * (char **) (defaults[i].location));
 	}
     }
-	
-    fclose (f);
+
+    js_save_config(buf, pos);
 }
 
+
+// Apply one key/value line from a config buffer.  Parses manually to avoid
+// sscanf, which calls musl's __toread (unimplemented in WASM) internally.
+static void M_ApplyConfigLine (char* line)
+{
+    char	def[80];
+    char	strparm[100];
+    char*	newstring;
+    int		parm;
+    boolean	isstring;
+    int		i, di, si;
+    char*	p = line;
+
+    // Skip leading whitespace
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0' || *p == '#') return;
+
+    // Read key
+    di = 0;
+    while (*p && *p != ' ' && *p != '\t' && di < 79)
+	def[di++] = *p++;
+    def[di] = '\0';
+    if (di == 0) return;
+
+    // Skip whitespace between key and value
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0') return;
+
+    // Read value (rest of line, minus trailing whitespace)
+    si = 0;
+    while (*p && si < 99)
+	strparm[si++] = *p++;
+    while (si > 0 && (strparm[si-1] == ' ' || strparm[si-1] == '\t' ||
+		      strparm[si-1] == '\r' || strparm[si-1] == '\n'))
+	si--;
+    strparm[si] = '\0';
+    if (si == 0) return;
+
+    // Parse value: string, hex, or decimal — no sscanf/FILE ops used
+    isstring = false;
+    parm = 0;
+    if (strparm[0] == '"')
+    {
+	int len = (int)strlen(strparm);
+	isstring = true;
+	newstring = (char *) malloc(len);
+	strparm[len-1] = '\0';
+	strcpy(newstring, strparm+1);
+    }
+    else if (strparm[0] == '0' && strparm[1] == 'x')
+    {
+	char* h = strparm + 2;
+	while (*h)
+	{
+	    parm *= 16;
+	    if (*h >= '0' && *h <= '9')      parm += *h - '0';
+	    else if (*h >= 'a' && *h <= 'f') parm += *h - 'a' + 10;
+	    else if (*h >= 'A' && *h <= 'F') parm += *h - 'A' + 10;
+	    h++;
+	}
+    }
+    else
+    {
+	int neg = 0;
+	char* d = strparm;
+	if (*d == '-') { neg = 1; d++; }
+	while (*d >= '0' && *d <= '9')
+	    parm = parm * 10 + (*d++ - '0');
+	if (neg) parm = -parm;
+    }
+
+    for (i=0 ; i<numdefaults ; i++)
+	if (!strcmp(def, defaults[i].name))
+	{
+	    if (!isstring)
+		*defaults[i].location = parm;
+	    else
+		*defaults[i].location = (int) newstring;
+	    break;
+	}
+}
+
+// Parse a config stored in a memory buffer (one "key value\n" per line).
+static void M_ApplyConfigBuf (char* buf, int len)
+{
+    char	line[200];
+    char*	src = buf;
+    char*	bufend = buf + len;
+
+    while (src < bufend)
+    {
+	char*	eol = src;
+	int	linelen;
+	while (eol < bufend && *eol != '\n') eol++;
+	linelen = (int)(eol - src);
+	if (linelen > 199) linelen = 199;
+	strncpy(line, src, linelen);
+	line[linelen] = '\0';
+	src = eol + 1;
+	M_ApplyConfigLine(line);
+    }
+}
 
 //
 // M_LoadDefaults
@@ -340,19 +448,13 @@ extern byte	scantokey[128];
 void M_LoadDefaults (void)
 {
     int		i;
-    int		len;
     FILE*	f;
-    char	def[80];
-    char	strparm[100];
-    char*	newstring;
-    int		parm;
-    boolean	isstring;
-    
+
     // set everything to base values
     numdefaults = sizeof(defaults)/sizeof(defaults[0]);
     for (i=0 ; i<numdefaults ; i++)
 	*defaults[i].location = defaults[i].defaultvalue;
-    
+
     // check for a custom default file
     i = M_CheckParm ("-config");
     if (i && i<myargc-1)
@@ -362,44 +464,21 @@ void M_LoadDefaults (void)
     }
     else
 	defaultfile = basedefault;
-    
-    // read the file in, overriding any set defaults
-    f = fopen (defaultfile, "r");
-    if (f)
+
+    // Try localStorage first; avoids fmemopen which hits unimplemented
+    // musl syscalls in the WASM build.
     {
-	while (!feof(f))
+	static char ls_buf[CONFIG_BUF_SIZE];
+	int ls_len = js_load_config(ls_buf, CONFIG_BUF_SIZE);
+	if (ls_len > 0)
 	{
-	    isstring = false;
-	    if (fscanf (f, "%79s %[^\n]\n", def, strparm) == 2)
-	    {
-		if (strparm[0] == '"')
-		{
-		    // get a string default
-		    isstring = true;
-		    len = strlen(strparm);
-		    newstring = (char *) malloc(len);
-		    strparm[len-1] = 0;
-		    strcpy(newstring, strparm+1);
-		}
-		else if (strparm[0] == '0' && strparm[1] == 'x')
-		    sscanf(strparm+2, "%x", &parm);
-		else
-		    sscanf(strparm, "%i", &parm);
-		for (i=0 ; i<numdefaults ; i++)
-		    if (!strcmp(def, defaults[i].name))
-		    {
-			if (!isstring)
-			    *defaults[i].location = parm;
-			else
-			    *defaults[i].location =
-				(int) newstring;
-			break;
-		    }
-	    }
+	    M_ApplyConfigBuf(ls_buf, ls_len);
+	    return;
 	}
-		
-	fclose (f);
     }
+
+    // No file-based fallback: fopen/fscanf use musl FILE ops not available in WASM.
+    (void)f;
 }
 
 

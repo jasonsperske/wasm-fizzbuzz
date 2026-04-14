@@ -37,7 +37,7 @@ extern "C" fn exit(_: i32) {
 
 #[no_mangle]
 extern "C" fn usleep(_: i32) -> i32 {
-    panic!("usleep unimplemented");
+    0 // no-op in WASM: frame pacing is handled by requestAnimationFrame
 }
 
 #[no_mangle]

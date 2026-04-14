@@ -131,9 +131,9 @@ void I_Quit (void)
 void I_WaitVBL(int count)
 {
     // No-op in WASM: frame pacing is handled by requestAnimationFrame.
-    // musl's usleep hits an unimplemented nanosleep syscall and crashes.
     (void)count;
 }
+
 
 void I_BeginRead(void)
 {
@@ -156,20 +156,21 @@ byte*	I_AllocLow(int length)
 //
 // I_Error
 //
+// JS import: receives a null-terminated error string, logs it, and stops the
+// game loop.  Throwing from JS propagates as a WASM trap so execution stops
+// immediately — no need for exit().
+extern void js_doom_error (const char* msg);
+
 extern boolean demorecording;
 
 void I_Error (char *error, ...)
 {
     va_list	argptr;
+    char	buf[1024];
 
-    // Message first.
-    va_start (argptr,error);
-    fprintf (stderr, "Error: ");
-    vfprintf (stderr,error,argptr);
-    fprintf (stderr, "\n");
+    va_start (argptr, error);
+    vsnprintf (buf, sizeof(buf), error, argptr);
     va_end (argptr);
-
-    fflush( stderr );
 
     // Shutdown. Here might be other errors.
     if (demorecording)
@@ -177,6 +178,7 @@ void I_Error (char *error, ...)
 
     D_QuitNetGame ();
     I_ShutdownGraphics();
-    
-    exit(-1);
+
+    // js_doom_error throws on the JS side, stopping WASM execution.
+    js_doom_error (buf);
 }
