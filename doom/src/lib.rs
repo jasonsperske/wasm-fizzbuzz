@@ -4,6 +4,7 @@ extern crate lazy_static;
 mod gamefile;
 pub mod js_imports;
 mod malloc;
+pub mod music;
 mod printf;
 pub mod state;
 mod unimplemented_libc;

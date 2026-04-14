@@ -173,20 +173,37 @@ function ensureAudio() {
     if (audioCtx) return true;
     try {
         audioCtx = new AudioContext();
+        // Start at full volume; updateFocusGain() will attenuate if actually blurred.
         focusGain = audioCtx.createGain();
-        focusGain.gain.value = document.hasFocus() ? 1.0 : 0.25;
+        focusGain.gain.value = 1.0;
         focusGain.connect(audioCtx.destination);
 
         sfxBus = audioCtx.createGain();
         sfxBus.gain.value = 1.0;
         sfxBus.connect(focusGain);
 
+        // Music bus: dynamics compressor prevents clipping when many notes play at once
+        //   musBus → musComp → focusGain → destination
         musBus = audioCtx.createGain();
-        musBus.gain.value = 1.0;
-        musBus.connect(focusGain);
+        musBus.gain.value = 0.9;
+        const musComp = audioCtx.createDynamicsCompressor();
+        musComp.threshold.value = -18;
+        musComp.knee.value      = 6;
+        musComp.ratio.value     = 6;
+        musComp.attack.value    = 0.003;
+        musComp.release.value   = 0.15;
+        musBus.connect(musComp);
+        musComp.connect(focusGain);
 
-        // Resume suspended context (Chrome requires a gesture first)
-        if (audioCtx.state === 'suspended') audioCtx.resume();
+        // Try to resume, but swallow the promise rejection if the page
+        // hasn't had a user gesture yet — the document-wide gesture
+        // listeners below will retry on the next real interaction.
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+        }
+
+        // Apply the correct gain for current focus state now that the node exists
+        updateFocusGain();
         return true;
     } catch (e) {
         console.warn('[doom] Web Audio unavailable:', e);
@@ -194,20 +211,31 @@ function ensureAudio() {
     }
 }
 
-// Focus / blur: smooth ramp over 150 ms so it doesn't click
-window.addEventListener('focus', () => {
-    if (focusGain) focusGain.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.05);
-});
-window.addEventListener('blur', () => {
-    if (focusGain) focusGain.gain.setTargetAtTime(0.25, audioCtx.currentTime, 0.05);
-});
-document.addEventListener('visibilitychange', () => {
-    if (!focusGain) return;
-    if (document.hidden) {
-        focusGain.gain.setTargetAtTime(0.25, audioCtx.currentTime, 0.05);
-    } else if (document.hasFocus()) {
-        focusGain.gain.setTargetAtTime(1.0, audioCtx.currentTime, 0.05);
+// Single source of truth for the focus gain.  Uses both document visibility
+// (tab switching) and document.hasFocus() (window focus), erring on the side
+// of "has focus" so background browser chrome / DevTools don't silence audio.
+function updateFocusGain() {
+    if (!focusGain || !audioCtx) return;
+    const hasFocus = !document.hidden && document.hasFocus();
+    const target   = hasFocus ? 1.0 : 0.25;
+    focusGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.05);
+}
+
+window.addEventListener('focus',           updateFocusGain);
+window.addEventListener('blur',            updateFocusGain);
+document.addEventListener('visibilitychange', updateFocusGain);
+
+// Some browsers (notably Chrome) keep AudioContext.currentTime advancing even
+// while the context is suspended.  Any events scheduled before the first user
+// gesture end up "in the past" once resume() runs.  Grab every user gesture we
+// can and resume aggressively so playback starts immediately.
+function resumeAudioIfSuspended() {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
     }
+}
+['mousedown', 'keydown', 'touchstart', 'click'].forEach(ev => {
+    document.addEventListener(ev, resumeAudioIfSuspended, true);
 });
 
 // ── SFX ───────────────────────────────────────────────────────────────────
@@ -290,47 +318,116 @@ function js_update_sound(handle, vol, sep, pitch) {
     }
 }
 
-// ── Music (MUS format) ────────────────────────────────────────────────────
-// MUS is DOOM's compact MIDI-like format.  We convert it to a standard MIDI
-// byte array and play it via a tiny sequencer driving OscillatorNodes.
-// For now this is a working stub that parses but plays silence; a full GM
-// synthesis engine is out of scope here.
+// ── Music (MUS format via rustysynth) ─────────────────────────────────────
+//
+// The Rust side (src/music.rs) converts MUS → MIDI and feeds it to
+// rustysynth, a pure-Rust General MIDI synthesizer.  This JS side is
+// responsible only for:
+//
+//   1. Fetching the SoundFont2 file and handing the bytes to `mus_init`.
+//   2. Running a ScriptProcessorNode that pulls PCM blocks from the Rust
+//      synth via `mus_render` every ~1024 frames.
+//   3. Forwarding DOOM's I_RegisterSong / I_PlaySong / … calls into Rust.
+//
+// Graph: scriptNode → musBus → compressor → focusGain → destination
 
-const musSongs = new Map(); // handle → { data: Uint8Array, intervalId }
-let nextMusHandle = 1;
+const MUS_BLOCK_SIZE = 1024;   // samples per channel per render call
+let musScriptNode = null;
+let musLeftPtr = 0, musRightPtr = 0;  // reserved buffers in WASM memory
+let musInitialized = false;
+
+// Kick off soundfont fetch + mus_init as soon as the WASM instance is ready
+// and an AudioContext exists.  Returns a promise that resolves once the synth
+// is ready to play (or rejects if anything fails).
+function initMusicSynth() {
+    if (musInitialized) return Promise.resolve(true);
+    if (!_doomExports || !audioCtx) return Promise.resolve(false);
+    return fetch('/doom/soundfont.sf2')
+        .then(r => {
+            if (!r.ok) throw new Error('soundfont.sf2 not found at /doom/soundfont.sf2');
+            return r.arrayBuffer();
+        })
+        .then(buf => {
+            const bytes = new Uint8Array(buf);
+            const sfPtr = _doomExports.mus_alloc(bytes.length);
+            if (!sfPtr) throw new Error('WASM alloc for soundfont failed');
+            new Uint8Array(memory.buffer, sfPtr, bytes.length).set(bytes);
+            const ok = _doomExports.mus_init(sfPtr, bytes.length, audioCtx.sampleRate | 0);
+            _doomExports.mus_free(sfPtr);
+            if (!ok) throw new Error('mus_init returned 0');
+            // Reserve two per-block PCM buffers (stable for the lifetime of the page)
+            musLeftPtr  = _doomExports.mus_alloc(MUS_BLOCK_SIZE * 4);
+            musRightPtr = _doomExports.mus_alloc(MUS_BLOCK_SIZE * 4);
+            _setupMusScriptNode();
+            musInitialized = true;
+            console.log('[doom] music synth ready (sample rate', audioCtx.sampleRate, ')');
+            return true;
+        })
+        .catch(err => {
+            console.warn('[doom] music synth init failed:', err.message);
+            return false;
+        });
+}
+
+// ScriptProcessorNode bridge: pulls PCM from the Rust synth every buffer.
+// ScriptProcessorNode is deprecated but universally supported; AudioWorklet
+// would require SharedArrayBuffer + COOP/COEP headers and a second WASM
+// instance, which is overkill for a demo.
+function _setupMusScriptNode() {
+    if (musScriptNode || !audioCtx) return;
+    musScriptNode = audioCtx.createScriptProcessor(MUS_BLOCK_SIZE, 0, 2);
+    musScriptNode.onaudioprocess = (ev) => {
+        if (!_doomExports || !musLeftPtr || !musRightPtr) return;
+        _doomExports.mus_render(musLeftPtr, musRightPtr, MUS_BLOCK_SIZE);
+        const outL = ev.outputBuffer.getChannelData(0);
+        const outR = ev.outputBuffer.getChannelData(1);
+        outL.set(new Float32Array(memory.buffer, musLeftPtr,  MUS_BLOCK_SIZE));
+        outR.set(new Float32Array(memory.buffer, musRightPtr, MUS_BLOCK_SIZE));
+    };
+    musScriptNode.connect(musBus);
+}
+
+// ── Public MUS API (DOOM i_sound.c → js_*_song → Rust mus_*) ──────────────
+//
+// Rust owns all the real state.  JS is a thin wrapper that:
+//   • forwards every call into the corresponding mus_* export
+//   • starts initMusicSynth() if it hasn't been started yet
+// Rust's mus_play_song will park the request in PENDING if mus_init hasn't
+// finished yet, and will fire it automatically once the synth is ready.
 
 function js_register_song(dataPtr, dataLen) {
-    if (!dataLen) return nextMusHandle++; // skip gracefully
-    // Copy MUS bytes out of WASM memory so they survive zone GC
-    const data = new Uint8Array(memory.buffer, dataPtr, dataLen).slice();
-    const handle = nextMusHandle++;
-    musSongs.set(handle, { data, intervalId: null });
-    return handle;
+    if (!_doomExports || !dataLen) return 0;
+    // Kick off soundfont fetch on the first registration, if not already.
+    if (!musInitialized) initMusicSynth();
+    return _doomExports.mus_register_song(dataPtr, dataLen);
 }
 
 function js_play_song(handle, looping) {
-    js_stop_song(handle);
-    const song = musSongs.get(handle);
-    if (!song || !ensureAudio()) return;
-    // Full MUS sequencing is a future enhancement.
-    // The stub keeps the handle alive so stop/unregister work correctly.
+    if (!_doomExports) return;
+    ensureAudio();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    if (!musInitialized) initMusicSynth();
+    _doomExports.mus_play_song(handle, looping ? 1 : 0);
 }
 
-function js_pause_song(handle) { /* no-op: full sequencer is a future enhancement */ }
+function js_pause_song(handle) {
+    if (!_doomExports) return;
+    _doomExports.mus_pause_song(handle);
+}
 
-function js_resume_song(handle) { /* no-op */ }
+function js_resume_song(handle) {
+    // rustysynth sequencer has no native pause, so "resume" just plays again.
+    js_play_song(handle, 1);
+}
 
 function js_stop_song(handle) {
-    const song = musSongs.get(handle);
-    if (song && song.intervalId) {
-        clearInterval(song.intervalId);
-        song.intervalId = null;
-    }
+    if (!_doomExports) return;
+    _doomExports.mus_stop_song(handle);
 }
 
 function js_unregister_song(handle) {
-    js_stop_song(handle);
-    musSongs.delete(handle);
+    if (!_doomExports) return;
+    _doomExports.mus_unregister_song(handle);
 }
 
 // ── Shared state ──────────────────────────────────────────────────────────
@@ -358,6 +455,10 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
             // Warm up the AudioContext on the first user gesture so that sound
             // is ready as soon as DOOM starts playing SFX.
             ensureAudio();
+            // Kick off soundfont fetch + synth init in the background.  Any
+            // js_play_song call that arrives before this resolves will be
+            // queued and fired once the synth is ready.
+            initMusicSynth();
 
             /*Initialize Doom*/
             obj.instance.exports.doom_start(argc, argvPtr);

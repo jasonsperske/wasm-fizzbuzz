@@ -8,3 +8,6 @@ edition = "2018"
 
 [dependencies]
 lazy_static = "1.4.0"
+# Pure-Rust General MIDI synthesizer (SoundFont 2).  Compiles to
+# wasm32-unknown-unknown out of the box.
+rustysynth = "1.3"
