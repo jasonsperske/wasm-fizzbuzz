@@ -57,8 +57,11 @@ pub extern "C" fn mus_free(ptr: *mut u8) {
 // ── WASM exports ──────────────────────────────────────────────────────────
 
 /// Initialise the synth with SoundFont2 bytes.  Returns 1 on success, 0 on
-/// failure.  Safe to call again (re-initialises).  Any song that was marked
-/// as "play" before the synth existed will start playing immediately.
+/// failure.  Safe to call again (re-initialises).  The actual `sequencer.play`
+/// for any pending song is deferred to the very first `mus_render` call so it
+/// happens after the AudioContext is definitely running (the ScriptProcessor
+/// only pulls once the context resumes, and rustysynth's internal state is
+/// more reliable if `play` is closely followed by the first `render`).
 #[no_mangle]
 pub extern "C" fn mus_init(sf_ptr: *const u8, sf_len: c_uint, sample_rate: c_int) -> c_int {
     if sf_ptr.is_null() || sf_len == 0 || sample_rate <= 0 {
@@ -80,21 +83,8 @@ pub extern "C" fn mus_init(sf_ptr: *const u8, sf_len: c_uint, sample_rate: c_int
             return 0;
         }
     };
-    let mut sequencer = MidiFileSequencer::new(synth);
-
-    // Apply any play that was requested before we existed.
-    let pending = PENDING.lock().unwrap().take();
-    if let Some((handle, looping)) = pending {
-        if let Some(midi) = SONGS.lock().unwrap().get((handle as usize).saturating_sub(1))
-                                    .and_then(|m| m.clone())
-        {
-            crate::log!("[music] resuming pending song {}", handle);
-            sequencer.play(&midi, looping);
-        }
-    }
-
+    let sequencer = MidiFileSequencer::new(synth);
     *STATE.lock().unwrap() = Some(MusicState { sound_font, sequencer });
-    crate::log!("[music] initialised at {} Hz", sample_rate);
     1
 }
 
@@ -175,11 +165,15 @@ pub extern "C" fn mus_unregister_song(handle: c_int) {
     }
 }
 
-/// Fill two interleaved-or-separate float32 planar buffers with `num_samples`
-/// stereo samples.  `left_ptr` and `right_ptr` must each point to `num_samples`
-/// contiguous f32 slots in WASM linear memory.
+/// Fill two planar float32 buffers with `num_samples` stereo samples.
+/// `left_ptr` and `right_ptr` each point to `num_samples` contiguous f32
+/// slots in WASM linear memory.  Writes silence if the synth is not yet
+/// initialised.
 ///
-/// Safe to call even before `mus_init`; writes silence in that case.
+/// The first render after `mus_init` also consumes any PENDING song: this
+/// defers `sequencer.play` to the point where the AudioContext is actually
+/// running, which avoids the "synth state set while context suspended"
+/// failure mode.
 #[no_mangle]
 pub extern "C" fn mus_render(left_ptr: *mut f32, right_ptr: *mut f32, num_samples: c_uint) {
     if num_samples == 0 || left_ptr.is_null() || right_ptr.is_null() {
@@ -191,7 +185,19 @@ pub extern "C" fn mus_render(left_ptr: *mut f32, right_ptr: *mut f32, num_sample
 
     let mut guard = STATE.lock().unwrap();
     match guard.as_mut() {
-        Some(state) => state.sequencer.render(left, right),
+        Some(state) => {
+            // Drain any pending play (scheduled before the synth existed).
+            let pending = PENDING.lock().unwrap().take();
+            if let Some((handle, looping)) = pending {
+                let midi = SONGS.lock().unwrap()
+                    .get((handle as usize).saturating_sub(1))
+                    .and_then(|m| m.clone());
+                if let Some(midi) = midi {
+                    state.sequencer.play(&midi, looping);
+                }
+            }
+            state.sequencer.render(left, right);
+        }
         None => {
             for s in left.iter_mut()  { *s = 0.0; }
             for s in right.iter_mut() { *s = 0.0; }

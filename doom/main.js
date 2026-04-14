@@ -16,13 +16,14 @@ function readCString(ptr) {
 
 function appendOutput(style) {
     return function (offset, length) {
-        const lines = readWasmString(offset, length).split('\n');
-        for (var i = 0; i < lines.length; ++i) {
-            if (lines[i].length == 0) {
-                continue;
-            }
-            console.log('[doom]', lines[i]);
-        }
+        // uncomment to see engine output
+        // const lines = readWasmString(offset, length).split('\n');
+        // for (var i = 0; i < lines.length; ++i) {
+        //     if (lines[i].length == 0) {
+        //         continue;
+        //     }
+        //     console.log(lines[i]);
+        // }
     }
 }
 
@@ -360,7 +361,7 @@ function initMusicSynth() {
             musRightPtr = _doomExports.mus_alloc(MUS_BLOCK_SIZE * 4);
             _setupMusScriptNode();
             musInitialized = true;
-            console.log('[doom] music synth ready (sample rate', audioCtx.sampleRate, ')');
+
             return true;
         })
         .catch(err => {
