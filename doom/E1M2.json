@@ -11,6 +11,11 @@
             "type": "use",
             "linedef": 690,
             "door": "E1M2-viewport"
+        },
+        {
+            "type": "use",
+            "linedef": 317,
+            "door": "E1M2-elevator"
         }
     ],
     "doors": {
@@ -25,6 +30,11 @@
             "y": 1135.9888458251953,
             "angleDeg": -128.671875,
             "redCard": true
+        },
+        "E1M2-elevator": {
+            "x": -536.4402770996094,
+            "y": -70.59603881835938,
+            "angleDeg": 178.2421875
         }
     }
 }

@@ -3,6 +3,11 @@
     "level": 3,
     "listeners": [],
     "doors": {
-        "E1M3-normal": {}
+        "E1M3-normal": {},
+        "E1M3-secret": {
+            "x": -2337.3377380371094,
+            "y": -2455.0948028564453,
+            "angleDeg": -4.21875
+        }
     }
 }
