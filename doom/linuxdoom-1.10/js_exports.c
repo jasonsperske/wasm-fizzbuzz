@@ -342,3 +342,65 @@ void doom_check_linedef_crossings(void) {
         }
     }
 }
+
+// ── Level geometry snapshot / restore ─────────────────────────────────────
+//
+// Enough state to capture mutations a player causes during play:
+//   • sector floor / ceiling heights (doors, platforms, secret lifts)
+//   • side texture indices           (switches — flipping a switch swaps
+//                                     SW1* ↔ SW2* on the owning side)
+//
+// Heights are fixed_t (16.16); JS should shift right by 16 (or divide by
+// 65536) to get map units if human-readable values are needed.
+// Texture indices are the WAD's internal numbering — stable for a given
+// WAD, not necessarily stable across WAD swaps.
+
+extern int         numsectors;
+extern sector_t*   sectors;
+extern int         numsides;
+extern side_t*     sides;
+
+int  doom_get_num_sectors(void)                  { return numsectors; }
+int  doom_get_num_sides(void)                    { return numsides;   }
+
+int  doom_get_sector_floor(int idx) {
+    if (idx < 0 || idx >= numsectors) return 0;
+    return sectors[idx].floorheight;
+}
+int  doom_get_sector_ceiling(int idx) {
+    if (idx < 0 || idx >= numsectors) return 0;
+    return sectors[idx].ceilingheight;
+}
+void doom_set_sector_floor(int idx, int h) {
+    if (idx < 0 || idx >= numsectors) return;
+    sectors[idx].floorheight = h;
+}
+void doom_set_sector_ceiling(int idx, int h) {
+    if (idx < 0 || idx >= numsectors) return;
+    sectors[idx].ceilingheight = h;
+}
+
+int  doom_get_side_top(int idx) {
+    if (idx < 0 || idx >= numsides) return 0;
+    return sides[idx].toptexture;
+}
+int  doom_get_side_mid(int idx) {
+    if (idx < 0 || idx >= numsides) return 0;
+    return sides[idx].midtexture;
+}
+int  doom_get_side_bot(int idx) {
+    if (idx < 0 || idx >= numsides) return 0;
+    return sides[idx].bottomtexture;
+}
+void doom_set_side_top(int idx, int tex) {
+    if (idx < 0 || idx >= numsides) return;
+    sides[idx].toptexture = (short)tex;
+}
+void doom_set_side_mid(int idx, int tex) {
+    if (idx < 0 || idx >= numsides) return;
+    sides[idx].midtexture = (short)tex;
+}
+void doom_set_side_bot(int idx, int tex) {
+    if (idx < 0 || idx >= numsides) return;
+    sides[idx].bottomtexture = (short)tex;
+}

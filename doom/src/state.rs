@@ -61,6 +61,20 @@ extern "C" {
     fn doom_watch_linedef(linedef_idx: c_int);
     fn doom_unwatch_linedef(linedef_idx: c_int);
     fn doom_check_linedef_crossings();
+
+    // ── Level-geometry snapshot / restore ────────────────────────────────
+    fn doom_get_num_sectors() -> c_int;
+    fn doom_get_num_sides()   -> c_int;
+    fn doom_get_sector_floor(idx: c_int)   -> c_int;
+    fn doom_get_sector_ceiling(idx: c_int) -> c_int;
+    fn doom_set_sector_floor(idx: c_int, h: c_int);
+    fn doom_set_sector_ceiling(idx: c_int, h: c_int);
+    fn doom_get_side_top(idx: c_int) -> c_int;
+    fn doom_get_side_mid(idx: c_int) -> c_int;
+    fn doom_get_side_bot(idx: c_int) -> c_int;
+    fn doom_set_side_top(idx: c_int, tex: c_int);
+    fn doom_set_side_mid(idx: c_int, tex: c_int);
+    fn doom_set_side_bot(idx: c_int, tex: c_int);
 }
 
 // ── Getters ───────────────────────────────────────────────────────────────
@@ -123,3 +137,20 @@ extern "C" {
 #[no_mangle] pub extern "C" fn watch_linedef(idx: c_int)   { unsafe { doom_watch_linedef(idx) } }
 #[no_mangle] pub extern "C" fn unwatch_linedef(idx: c_int) { unsafe { doom_unwatch_linedef(idx) } }
 #[no_mangle] pub extern "C" fn check_linedef_crossings()   { unsafe { doom_check_linedef_crossings() } }
+
+// ── Level-geometry snapshot / restore ─────────────────────────────────────
+
+#[no_mangle] pub extern "C" fn get_num_sectors() -> c_int { unsafe { doom_get_num_sectors() } }
+#[no_mangle] pub extern "C" fn get_num_sides()   -> c_int { unsafe { doom_get_num_sides() } }
+
+#[no_mangle] pub extern "C" fn get_sector_floor(idx: c_int)   -> c_int { unsafe { doom_get_sector_floor(idx) } }
+#[no_mangle] pub extern "C" fn get_sector_ceiling(idx: c_int) -> c_int { unsafe { doom_get_sector_ceiling(idx) } }
+#[no_mangle] pub extern "C" fn set_sector_floor(idx: c_int, h: c_int)   { unsafe { doom_set_sector_floor(idx, h) } }
+#[no_mangle] pub extern "C" fn set_sector_ceiling(idx: c_int, h: c_int) { unsafe { doom_set_sector_ceiling(idx, h) } }
+
+#[no_mangle] pub extern "C" fn get_side_top(idx: c_int) -> c_int { unsafe { doom_get_side_top(idx) } }
+#[no_mangle] pub extern "C" fn get_side_mid(idx: c_int) -> c_int { unsafe { doom_get_side_mid(idx) } }
+#[no_mangle] pub extern "C" fn get_side_bot(idx: c_int) -> c_int { unsafe { doom_get_side_bot(idx) } }
+#[no_mangle] pub extern "C" fn set_side_top(idx: c_int, tex: c_int) { unsafe { doom_set_side_top(idx, tex) } }
+#[no_mangle] pub extern "C" fn set_side_mid(idx: c_int, tex: c_int) { unsafe { doom_set_side_mid(idx, tex) } }
+#[no_mangle] pub extern "C" fn set_side_bot(idx: c_int, tex: c_int) { unsafe { doom_set_side_bot(idx, tex) } }

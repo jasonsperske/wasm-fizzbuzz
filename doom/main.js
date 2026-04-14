@@ -91,6 +91,9 @@ var importObject = {
             // C has already cleared the watcher list for the new level.
             // Re-register every linedef that JS still has callbacks for.
             linedefListeners.forEach((_, idx) => _doomExports.watch_linedef(idx));
+            // Snapshot the pristine sector heights and side textures so
+            // saveState() can emit only what has changed during play.
+            _captureLevelBaseline();
             document.dispatchEvent(new CustomEvent('levelLoaded', { detail: { episode, map } }));
         },
         js_linedef_used: (linedefIdx, side) => {
@@ -438,6 +441,30 @@ const useListeners = new Map(); // linedefIdx → Set<callback>  (use/activate)
 let _doomExports = null;            // set once WASM is instantiated
 let _doomRunning = true;            // cleared by js_doom_quit to stop the loop
 
+// Baseline level geometry captured at load time.  Used by saveState() to
+// emit only the sectors / sides that have changed during play, and by
+// setState() as the "reset" target before applying the snapshot's deltas.
+// Shape: { sectorHeights: Int32Array(2N), sideTextures: Int32Array(3M) }
+let _levelBaseline = null;
+
+function _captureLevelBaseline() {
+    if (!_doomExports) return;
+    const n = _doomExports.get_num_sectors();
+    const m = _doomExports.get_num_sides();
+    const sh = new Int32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+        sh[i * 2]     = _doomExports.get_sector_floor(i);
+        sh[i * 2 + 1] = _doomExports.get_sector_ceiling(i);
+    }
+    const st = new Int32Array(m * 3);
+    for (let i = 0; i < m; i++) {
+        st[i * 3]     = _doomExports.get_side_top(i);
+        st[i * 3 + 1] = _doomExports.get_side_mid(i);
+        st[i * 3 + 2] = _doomExports.get_side_bot(i);
+    }
+    _levelBaseline = { sectorHeights: sh, sideTextures: st };
+}
+
 WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
     .then(obj => {
         _doomExports = obj.instance.exports;
@@ -574,6 +601,37 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
 
             const rawAngle = ex.get_player_angle();
 
+            // Level geometry deltas: only sectors/sides that differ from the
+            // baseline captured at level load.  Empty arrays mean "pristine".
+            // Format:
+            //   sectorChanges: [[idx, floor, ceiling], …]
+            //   sideChanges:   [[idx, top,   mid,     bot], …]
+            const sectorChanges = [];
+            const sideChanges   = [];
+            if (_levelBaseline) {
+                const base = _levelBaseline;
+                const numSectors = ex.get_num_sectors();
+                for (let i = 0; i < numSectors; i++) {
+                    const f = ex.get_sector_floor(i);
+                    const c = ex.get_sector_ceiling(i);
+                    if (f !== base.sectorHeights[i * 2] ||
+                        c !== base.sectorHeights[i * 2 + 1]) {
+                        sectorChanges.push([i, f, c]);
+                    }
+                }
+                const numSides = ex.get_num_sides();
+                for (let i = 0; i < numSides; i++) {
+                    const t = ex.get_side_top(i);
+                    const m = ex.get_side_mid(i);
+                    const b = ex.get_side_bot(i);
+                    if (t !== base.sideTextures[i * 3] ||
+                        m !== base.sideTextures[i * 3 + 1] ||
+                        b !== base.sideTextures[i * 3 + 2]) {
+                        sideChanges.push([i, t, m, b]);
+                    }
+                }
+            }
+
             return {
                 // Position / orientation
                 x: ex.get_player_x() / 65536,
@@ -593,6 +651,10 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
                 ...keys,
                 ...weapons,
                 ...ammo,
+                // Level geometry deltas from the pristine level load.
+                // Empty arrays mean "nothing has changed yet".
+                sectorChanges,
+                sideChanges,
             };
         };
 
@@ -674,6 +736,55 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
             }
 
             if (state.backpack !== undefined) ex.set_backpack(state.backpack ? 1 : 0);
+
+            // Level-geometry restore.  The snapshot carries only the sectors
+            // / sides that had changed from the pristine level at save time.
+            // To restore exactly that view of the world we first reset every
+            // sector/side to the baseline captured at level load, then apply
+            // the snapshot's deltas on top.
+            const hasGeomDelta = Array.isArray(state.sectorChanges) ||
+                                 Array.isArray(state.sideChanges);
+            if (hasGeomDelta) {
+                if (!_levelBaseline) {
+                    console.warn('[doom] no level baseline captured — cannot restore geometry');
+                } else {
+                    const n = ex.get_num_sectors();
+                    const m = ex.get_num_sides();
+                    if (_levelBaseline.sectorHeights.length !== n * 2 ||
+                        _levelBaseline.sideTextures.length   !== m * 3) {
+                        console.warn('[doom] level baseline size differs from current level — skipping geometry restore');
+                    } else {
+                        // 1. Reset everything to pristine
+                        for (let i = 0; i < n; i++) {
+                            ex.set_sector_floor(i,   _levelBaseline.sectorHeights[i * 2]);
+                            ex.set_sector_ceiling(i, _levelBaseline.sectorHeights[i * 2 + 1]);
+                        }
+                        for (let i = 0; i < m; i++) {
+                            ex.set_side_top(i, _levelBaseline.sideTextures[i * 3]);
+                            ex.set_side_mid(i, _levelBaseline.sideTextures[i * 3 + 1]);
+                            ex.set_side_bot(i, _levelBaseline.sideTextures[i * 3 + 2]);
+                        }
+                        // 2. Apply the snapshot's deltas
+                        if (Array.isArray(state.sectorChanges)) {
+                            for (const [idx, floor, ceiling] of state.sectorChanges) {
+                                if (idx >= 0 && idx < n) {
+                                    ex.set_sector_floor(idx, floor);
+                                    ex.set_sector_ceiling(idx, ceiling);
+                                }
+                            }
+                        }
+                        if (Array.isArray(state.sideChanges)) {
+                            for (const [idx, top, mid, bot] of state.sideChanges) {
+                                if (idx >= 0 && idx < m) {
+                                    ex.set_side_top(idx, top);
+                                    ex.set_side_mid(idx, mid);
+                                    ex.set_side_bot(idx, bot);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         /*Cast a ray from the player's current position in their facing direction
