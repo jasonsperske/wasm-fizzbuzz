@@ -3,6 +3,75 @@
     "level": 9,
     "listeners": [],
     "doors": {
-        "E1M9-normal": {}
+        "E1M9-normal": {
+            "x": 96,
+            "y": -272,
+            "rotation": 0
+        },
+        "E1M9-partner": {
+            "x": 32,
+            "y": -224,
+            "rotation": 0
+        },
+        "E1M9-ally": {
+            "x": 32,
+            "y": -320,
+            "rotation": 0
+        },
+        "E1M9-buddy": {
+            "x": 32,
+            "y": -272,
+            "rotation": 0
+        },
+        "E1M9-dm1": {
+            "x": 2640,
+            "y": 576,
+            "rotation": 180
+        },
+        "E1M9-dm2": {
+            "x": -608,
+            "y": -1280,
+            "rotation": 90
+        },
+        "E1M9-dm3": {
+            "x": 1504,
+            "y": -960,
+            "rotation": 0
+        },
+        "E1M9-dm4": {
+            "x": 1248,
+            "y": -464,
+            "rotation": 135
+        },
+        "E1M9-dm5": {
+            "x": 1504,
+            "y": 864,
+            "rotation": 45
+        },
+        "E1M9-dm6": {
+            "x": 384,
+            "y": 1504,
+            "rotation": 270
+        },
+        "E1M9-dm7": {
+            "x": -320,
+            "y": 1152,
+            "rotation": 270
+        },
+        "E1M9-dm8": {
+            "x": -384,
+            "y": 64,
+            "rotation": 180
+        },
+        "E1M9-dm9": {
+            "x": 160,
+            "y": -272,
+            "rotation": 0
+        },
+        "E1M9-dm10": {
+            "x": -224,
+            "y": -1408,
+            "rotation": 0
+        }
     }
 }

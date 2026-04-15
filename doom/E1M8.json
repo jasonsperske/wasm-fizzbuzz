@@ -3,6 +3,70 @@
     "level": 8,
     "listeners": [],
     "doors": {
-        "E1M8-normal": {}
+        "E1M8-normal": {
+            "x": -128,
+            "y": -224,
+            "rotation": 0
+        },
+        "E1M8-partner": {
+            "x": -128,
+            "y": -160,
+            "rotation": 0
+        },
+        "E1M8-ally": {
+            "x": -192,
+            "y": -288,
+            "rotation": 0
+        },
+        "E1M8-buddy": {
+            "x": -192,
+            "y": -160,
+            "rotation": 0
+        },
+        "E1M8-dm1": {
+            "x": 416,
+            "y": 4080,
+            "rotation": 270
+        },
+        "E1M8-dm2": {
+            "x": 1408,
+            "y": 3360,
+            "rotation": 180
+        },
+        "E1M8-dm3": {
+            "x": -576,
+            "y": 3360,
+            "rotation": 0
+        },
+        "E1M8-dm4": {
+            "x": -240,
+            "y": 2112,
+            "rotation": 45
+        },
+        "E1M8-dm5": {
+            "x": 1072,
+            "y": 2112,
+            "rotation": 135
+        },
+        "E1M8-dm6": {
+            "x": 896,
+            "y": 864,
+            "rotation": 180
+        },
+        "E1M8-dm7": {
+            "x": -96,
+            "y": 864,
+            "rotation": 0
+        },
+        "E1M8-dm8": {
+            "x": 832,
+            "y": -224,
+            "rotation": 180
+        },
+        "E1M8-dm9": {
+            "x": -128,
+            "y": -288,
+            "rotation": 0
+        }
     }
 }

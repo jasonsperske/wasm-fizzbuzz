@@ -3,6 +3,75 @@
     "level": 7,
     "listeners": [],
     "doors": {
-        "E1M7-normal": {}
+        "E1M7-normal": {
+            "x": 96,
+            "y": 528,
+            "rotation": 270
+        },
+        "E1M7-partner": {
+            "x": 160,
+            "y": 528,
+            "rotation": 270
+        },
+        "E1M7-ally": {
+            "x": 224,
+            "y": 528,
+            "rotation": 270
+        },
+        "E1M7-buddy": {
+            "x": 288,
+            "y": 528,
+            "rotation": 270
+        },
+        "E1M7-dm1": {
+            "x": 1280,
+            "y": -832,
+            "rotation": 270
+        },
+        "E1M7-dm2": {
+            "x": 1888,
+            "y": -2272,
+            "rotation": 180
+        },
+        "E1M7-dm3": {
+            "x": 352,
+            "y": -1888,
+            "rotation": 315
+        },
+        "E1M7-dm4": {
+            "x": -1440,
+            "y": -2656,
+            "rotation": 0
+        },
+        "E1M7-dm5": {
+            "x": -896,
+            "y": -64,
+            "rotation": 90
+        },
+        "E1M7-dm6": {
+            "x": -560,
+            "y": -96,
+            "rotation": 270
+        },
+        "E1M7-dm7": {
+            "x": -1728,
+            "y": 384,
+            "rotation": 0
+        },
+        "E1M7-dm8": {
+            "x": 1280,
+            "y": -144,
+            "rotation": 270
+        },
+        "E1M7-dm9": {
+            "x": 544,
+            "y": -960,
+            "rotation": 135
+        },
+        "E1M7-dm10": {
+            "x": -512,
+            "y": -1520,
+            "rotation": 0
+        }
     }
 }
