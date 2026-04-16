@@ -10,6 +10,7 @@ all:
 	mkdir -p ./public/doom
 	cp -a ./doom/index.html ./public/doom/
 	cp -a ./doom/main.js ./public/doom/
+	cp -a ./doom/mus_worklet.js ./public/doom/
 	cp -a ./doom/doom.wasm ./public/doom/
 	cp -a ./doom/soundfont.sf2 ./public/doom/
 	# for each *.json file in doom/, copy it to public/doom/ and also copy index.html to a subfolder named after the json file (without extension)

@@ -208,6 +208,9 @@ function ensureAudio() {
 
         // Apply the correct gain for current focus state now that the node exists
         updateFocusGain();
+        // Decide the real music engine now that audioCtx exists: insecure
+        // origins hide `audioWorklet`, which would otherwise blow up later.
+        _resolveMusEngine();
         return true;
     } catch (e) {
         console.warn('[doom] Web Audio unavailable:', e);
@@ -325,24 +328,48 @@ function js_update_sound(handle, vol, sep, pitch) {
 // ── Music (MUS format via rustysynth) ─────────────────────────────────────
 //
 // The Rust side (src/music.rs) converts MUS → MIDI and feeds it to
-// rustysynth, a pure-Rust General MIDI synthesizer.  This JS side is
-// responsible only for:
+// rustysynth, a pure-Rust General MIDI synthesizer.  Two render paths are
+// supported so we can A/B compare the legacy and the modern Web Audio APIs:
 //
-//   1. Fetching the SoundFont2 file and handing the bytes to `mus_init`.
-//   2. Running a ScriptProcessorNode that pulls PCM blocks from the Rust
-//      synth via `mus_render` every ~1024 frames.
-//   3. Forwarding DOOM's I_RegisterSong / I_PlaySong / … calls into Rust.
+//   engine = 'worklet'        (default)
+//     A second doom.wasm instance lives inside an AudioWorkletProcessor
+//     (mus_worklet.js).  All mus_* calls are forwarded via port.postMessage,
+//     and rendering happens on the audio thread.  No main-thread cost per
+//     audio buffer.
 //
-// Graph: scriptNode → musBus → compressor → focusGain → destination
+//   engine = 'scriptprocessor'  (?engine=scriptprocessor)
+//     The deprecated ScriptProcessorNode pulls PCM blocks from the main-thread
+//     WASM instance.  Kept for performance comparison against the worklet.
+//
+// Graph (both paths): <renderer> → musBus → compressor → focusGain → destination
 
+// `let` because we may downgrade to 'scriptprocessor' at runtime if the
+// AudioContext doesn't expose `audioWorklet` (which happens whenever the page
+// is served over an insecure context — plain HTTP on anything other than
+// localhost/127.0.0.1 / file://, etc).
+let MUS_ENGINE = new URLSearchParams(location.search).get('engine') === 'scriptprocessor'
+    ? 'scriptprocessor' : 'worklet';
+
+// Shared stats surface.  The active engine fills this in; index.html reads it.
+const musStats = {
+    engine: MUS_ENGINE,
+    count: 0,
+    sumMs: 0,
+    maxMs: 0,
+    lastMs: 0,
+    blockSize: 0,
+    sampleRate: 0,
+    uptimeMs: 0,
+};
+window._musStats = musStats;
+
+// ── ScriptProcessor path (legacy) ─────────────────────────────────────────
 const MUS_BLOCK_SIZE = 1024;   // samples per channel per render call
 let musScriptNode = null;
 let musLeftPtr = 0, musRightPtr = 0;  // reserved buffers in WASM memory
 let musInitialized = false;
+let _musStatsStart = 0;
 
-// Kick off soundfont fetch + mus_init as soon as the WASM instance is ready
-// and an AudioContext exists.  Returns a promise that resolves once the synth
-// is ready to play (or rejects if anything fails).
 function initMusicSynth() {
     if (musInitialized) return Promise.resolve(true);
     if (!_doomExports || !audioCtx) return Promise.resolve(false);
@@ -359,12 +386,10 @@ function initMusicSynth() {
             const ok = _doomExports.mus_init(sfPtr, bytes.length, audioCtx.sampleRate | 0);
             _doomExports.mus_free(sfPtr);
             if (!ok) throw new Error('mus_init returned 0');
-            // Reserve two per-block PCM buffers (stable for the lifetime of the page)
             musLeftPtr  = _doomExports.mus_alloc(MUS_BLOCK_SIZE * 4);
             musRightPtr = _doomExports.mus_alloc(MUS_BLOCK_SIZE * 4);
             _setupMusScriptNode();
             musInitialized = true;
-
             return true;
         })
         .catch(err => {
@@ -373,50 +398,173 @@ function initMusicSynth() {
         });
 }
 
-// ScriptProcessorNode bridge: pulls PCM from the Rust synth every buffer.
-// ScriptProcessorNode is deprecated but universally supported; AudioWorklet
-// would require SharedArrayBuffer + COOP/COEP headers and a second WASM
-// instance, which is overkill for a demo.
 function _setupMusScriptNode() {
     if (musScriptNode || !audioCtx) return;
     musScriptNode = audioCtx.createScriptProcessor(MUS_BLOCK_SIZE, 0, 2);
+    musStats.blockSize = MUS_BLOCK_SIZE;
+    musStats.sampleRate = audioCtx.sampleRate;
+    _musStatsStart = performance.now();
     musScriptNode.onaudioprocess = (ev) => {
         if (!_doomExports || !musLeftPtr || !musRightPtr) return;
+        const t0 = performance.now();
         _doomExports.mus_render(musLeftPtr, musRightPtr, MUS_BLOCK_SIZE);
         const outL = ev.outputBuffer.getChannelData(0);
         const outR = ev.outputBuffer.getChannelData(1);
         outL.set(new Float32Array(memory.buffer, musLeftPtr,  MUS_BLOCK_SIZE));
         outR.set(new Float32Array(memory.buffer, musRightPtr, MUS_BLOCK_SIZE));
+        const dt = performance.now() - t0;
+        musStats.count++;
+        musStats.sumMs += dt;
+        if (dt > musStats.maxMs) musStats.maxMs = dt;
+        musStats.lastMs = dt;
+        musStats.uptimeMs = performance.now() - _musStatsStart;
     };
     musScriptNode.connect(musBus);
 }
 
+// ── AudioWorklet path (default) ───────────────────────────────────────────
+let musWorkletNode = null;
+let musWorkletReady = false;
+let musWorkletInitStarted = false;
+let _nextSongHandle = 1;
+
+// DOOM's i_sound calls js_register_song / js_play_song immediately when the
+// title music loads — that can easily beat `initMusicWorklet`'s async
+// addModule + fetch + node construction.  Any message posted before the node
+// exists is queued here and flushed once it does.
+const _musPending = [];
+function _postToMusWorklet(msg, transfer) {
+    if (musWorkletNode) {
+        musWorkletNode.port.postMessage(msg, transfer || []);
+    } else {
+        _musPending.push({ msg, transfer: transfer || [] });
+    }
+}
+function _flushMusPending() {
+    if (!musWorkletNode) return;
+    while (_musPending.length) {
+        const { msg, transfer } = _musPending.shift();
+        musWorkletNode.port.postMessage(msg, transfer);
+    }
+}
+
+// Check audioCtx support for AudioWorklet; downgrade MUS_ENGINE if it's
+// unavailable.  Runs synchronously right after ensureAudio() creates the
+// context, so js_register_song / js_play_song always see the final engine.
+function _resolveMusEngine() {
+    if (MUS_ENGINE !== 'worklet') return;
+    if (!audioCtx) return;
+    if (!audioCtx.audioWorklet) {
+        console.warn('[doom] AudioWorklet unavailable (insecure context? — serve over https:// or localhost). Falling back to ScriptProcessor.');
+        MUS_ENGINE = 'scriptprocessor';
+        musStats.engine = 'scriptprocessor';
+    }
+}
+
+async function initMusicWorklet() {
+    if (musWorkletInitStarted) return;
+    if (!audioCtx) return;
+    _resolveMusEngine();
+    if (MUS_ENGINE !== 'worklet') return;
+    musWorkletInitStarted = true;
+    try {
+        await audioCtx.audioWorklet.addModule('/doom/mus_worklet.js');
+        const [wasmRes, sfRes] = await Promise.all([
+            fetch('/doom/doom.wasm'),
+            fetch('/doom/soundfont.sf2'),
+        ]);
+        if (!wasmRes.ok) throw new Error('doom.wasm fetch failed');
+        if (!sfRes.ok)   throw new Error('soundfont.sf2 fetch failed');
+        const [wasmBuf, sfBuf] = await Promise.all([wasmRes.arrayBuffer(), sfRes.arrayBuffer()]);
+
+        musWorkletNode = new AudioWorkletNode(audioCtx, 'mus-synth', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+        });
+        musWorkletNode.onprocessorerror = (ev) => {
+            console.error('[doom] mus-synth processorerror:',
+                ev.message, ev.filename + ':' + ev.lineno, ev.error && ev.error.stack);
+        };
+        musWorkletNode.port.onmessage = (ev) => {
+            const m = ev.data;
+            if (m.type === 'ready') {
+                musWorkletReady = true;
+            } else if (m.type === 'stats') {
+                musStats.count      = m.count;
+                musStats.sumMs      = m.sumMs;
+                musStats.maxMs      = m.maxMs;
+                musStats.lastMs     = m.lastMs;
+                musStats.blockSize  = m.blockSize;
+                musStats.sampleRate = m.sampleRate;
+                musStats.uptimeMs   = m.uptimeMs;
+            } else if (m.type === 'error') {
+                console.error('[doom] music worklet error:', m.message);
+            }
+        };
+        musWorkletNode.port.postMessage({
+            type: 'init',
+            wasmBytes: wasmBuf,
+            sfBytes: sfBuf,
+            sampleRate: audioCtx.sampleRate | 0,
+        }, [wasmBuf, sfBuf]);
+        musWorkletNode.connect(musBus);
+        // Deliver anything DOOM posted during the async spin-up.
+        _flushMusPending();
+    } catch (err) {
+        console.warn('[doom] music worklet init failed:', err.message);
+        musWorkletInitStarted = false;
+    }
+}
+
 // ── Public MUS API (DOOM i_sound.c → js_*_song → Rust mus_*) ──────────────
 //
-// Rust owns all the real state.  JS is a thin wrapper that:
-//   • forwards every call into the corresponding mus_* export
-//   • starts initMusicSynth() if it hasn't been started yet
-// Rust's mus_play_song will park the request in PENDING if mus_init hasn't
-// finished yet, and will fire it automatically once the synth is ready.
+// Dispatch based on MUS_ENGINE.  The scriptprocessor path forwards calls
+// directly into the main-thread WASM's mus_* exports; the worklet path posts
+// messages to the AudioWorkletProcessor, which owns its own WASM instance.
 
 function js_register_song(dataPtr, dataLen) {
-    if (!_doomExports || !dataLen) return 0;
-    // Kick off soundfont fetch on the first registration, if not already.
-    if (!musInitialized) initMusicSynth();
-    return _doomExports.mus_register_song(dataPtr, dataLen);
+    if (!dataLen) return 0;
+    if (MUS_ENGINE === 'scriptprocessor') {
+        if (!_doomExports) return 0;
+        if (!musInitialized) initMusicSynth();
+        return _doomExports.mus_register_song(dataPtr, dataLen);
+    }
+    // Worklet path: copy MUS bytes out of DOOM's wasm memory and ship across.
+    ensureAudio();
+    if (!musWorkletInitStarted) initMusicWorklet();
+    const handle = _nextSongHandle++;
+    // Copy (not view) because memory.buffer may be detached later by grow.
+    const copy = new Uint8Array(dataLen);
+    copy.set(new Uint8Array(memory.buffer, dataPtr, dataLen));
+    _postToMusWorklet(
+        { type: 'register', handle, musBytes: copy.buffer },
+        [copy.buffer],
+    );
+    return handle;
 }
 
 function js_play_song(handle, looping) {
-    if (!_doomExports) return;
+    if (MUS_ENGINE === 'scriptprocessor') {
+        if (!_doomExports) return;
+        ensureAudio();
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        if (!musInitialized) initMusicSynth();
+        _doomExports.mus_play_song(handle, looping ? 1 : 0);
+        return;
+    }
     ensureAudio();
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-    if (!musInitialized) initMusicSynth();
-    _doomExports.mus_play_song(handle, looping ? 1 : 0);
+    if (!musWorkletInitStarted) initMusicWorklet();
+    _postToMusWorklet({ type: 'play', handle, looping: !!looping });
 }
 
 function js_pause_song(handle) {
-    if (!_doomExports) return;
-    _doomExports.mus_pause_song(handle);
+    if (MUS_ENGINE === 'scriptprocessor') {
+        if (_doomExports) _doomExports.mus_pause_song(handle);
+        return;
+    }
+    _postToMusWorklet({ type: 'pause', handle });
 }
 
 function js_resume_song(handle) {
@@ -425,14 +573,21 @@ function js_resume_song(handle) {
 }
 
 function js_stop_song(handle) {
-    if (!_doomExports) return;
-    _doomExports.mus_stop_song(handle);
+    if (MUS_ENGINE === 'scriptprocessor') {
+        if (_doomExports) _doomExports.mus_stop_song(handle);
+        return;
+    }
+    _postToMusWorklet({ type: 'stop', handle });
 }
 
 function js_unregister_song(handle) {
-    if (!_doomExports) return;
-    _doomExports.mus_unregister_song(handle);
+    if (MUS_ENGINE === 'scriptprocessor') {
+        if (_doomExports) _doomExports.mus_unregister_song(handle);
+        return;
+    }
+    _postToMusWorklet({ type: 'unregister', handle });
 }
+
 
 // ── Shared state ──────────────────────────────────────────────────────────
 // Shared state needed by importObject.env handlers before obj is available.
@@ -486,7 +641,11 @@ WebAssembly.instantiateStreaming(fetch('/doom/doom.wasm'), importObject)
             // Kick off soundfont fetch + synth init in the background.  Any
             // js_play_song call that arrives before this resolves will be
             // queued and fired once the synth is ready.
-            initMusicSynth();
+            if (MUS_ENGINE === 'worklet') {
+                initMusicWorklet();
+            } else {
+                initMusicSynth();
+            }
 
             /*Initialize Doom*/
             obj.instance.exports.doom_start(argc, argvPtr);
